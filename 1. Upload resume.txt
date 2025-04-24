@@ -12,3 +12,5 @@ Only work on Threshold/JD management --- Backend and Frontend
 Upload JD, Create Dashboards, Generate Question and Answers on each dashboard. 
 
 Upload Resume, Generate Dashboards, Generate Question and Answers on each dashboard. 
+
+Present-Vinod - JD Q/A
