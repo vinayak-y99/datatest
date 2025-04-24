@@ -2,7 +2,6 @@ import os
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from app.routes.skills_evaluation import analyze_job_description_router
-from app.hiring_manager.recruiters import hiring_recruiter_router
 from app.routes.jd import CreateJD_router
 app = FastAPI()
 
@@ -17,7 +16,6 @@ app.add_middleware(
 
 # Include routers
 app.include_router(analyze_job_description_router, tags=["Job Analysis"])
-app.include_router(hiring_recruiter_router, tags=["Hiring Manager"])
 app.include_router(CreateJD_router, tags=["create"])
 @app.get("/")
 async def root():

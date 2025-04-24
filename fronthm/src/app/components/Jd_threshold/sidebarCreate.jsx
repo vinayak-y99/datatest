@@ -325,37 +325,54 @@ const Sidebar = ({
     return (
         <div className="p-4 bg-white rounded-lg shadow-md">
             <div className="mb-6 border rounded-lg p-4">
-                {/* <h3 className="text-lg font-medium mb-3">Select Role</h3> */}
-                <RoleSelector
-                    roles={roles} 
-                    onRoleChange={handleRoleChange}
-                    selectedRoles={selectedRoles}
-                />
-            </div>
-            <div className="mb-6">
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                    Number of Dashboards: {dashboardCount}
+                <label htmlFor="promptInput" className="block text-sm font-medium text-gray-700 mb-2">
+                    Enter Prompt
                 </label>
-                <input
-                    type="range"
-                    min="1"
-                    max={Math.max(10, availableDashboards.length)}
-                    value={dashboardCount}
-                    onChange={handleDashboardCountChange}
-                    className="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer"
+                <textarea
+                    id="promptInput"
+                    className="w-full p-2 border border-gray-300 rounded-md focus:ring-indigo-500 focus:border-indigo-500"
+                    placeholder="Enter your prompt here..."
+                    rows={3}
+                    value={message}
+                    onChange={(e) => setMessage(e.target.value)}
                 />
-                <div className="flex justify-between text-xs text-gray-500 mt-1">
-                    <span>1</span>
-                    <span>{Math.max(10, availableDashboards.length)}</span>
+                <button
+                    onClick={() => handleRunPrompt(message)}
+                    className="mt-3 w-full py-2 px-4 bg-green-600 text-white rounded-md hover:bg-green-700 transition-colors disabled:bg-gray-400"
+                    disabled={!message.trim() || isLoading}
+                >
+                    Submit Prompt
+                </button>
+                <div className="mt-4">
+                    <p className="text-sm font-medium text-gray-700 mb-2">Sample Prompts:</p>
+                    <div className="space-y-2">
+                        <div 
+                            className="p-2 bg-gray-100 rounded cursor-pointer hover:bg-gray-200"
+                            onClick={() => setMessage("Set JavaScript's selection score to 85.5%")}
+                        >
+                            Set JavaScript's selection score to 85.5%
+                        </div>
+                        <div 
+                            className="p-2 bg-gray-100 rounded cursor-pointer hover:bg-gray-200"
+                            onClick={() => setMessage("Update React's rating to 4.5")}
+                        >
+                            Update React's rating to 4.5
+                        </div>
+                        <div 
+                            className="p-2 bg-gray-100 rounded cursor-pointer hover:bg-gray-200"
+                            onClick={() => setMessage("Change TypeScript's importance to 90.0%")}
+                        >
+                            Change TypeScript's importance to 90.0%
+                        </div>
+                        <div 
+                            className="p-2 bg-gray-100 rounded cursor-pointer hover:bg-gray-200"
+                            onClick={() => setMessage("Adjust Node.js's rejection score to 25.0%")}
+                        >
+                            Adjust Node.js's rejection score to 25.0%
+                        </div>
+                    </div>
                 </div>
             </div>
-            <button
-                onClick={handleCreate}
-                className="w-full mb-6 py-2 px-4 bg-indigo-600 text-white rounded-md hover:bg-indigo-700 transition-colors disabled:bg-gray-400"
-                disabled={selectedRoles.length === 0 || selectedDashboards.length === 0 || isLoading}
-            >
-                {isLoading ? "Creating..." : "Create Dashboard"}
-            </button>
 
             {message && (
                 <div className="mt-4 p-3 bg-green-100 text-green-700 rounded-md">
