@@ -1,0 +1,303 @@
+@analyze_job_description_router.post("/api/analyze_job_description/", response_model=JobAnalysisResponse)
+async def analyze_job_description(user_id:str, file: UploadFile = File(...), db: Session = Depends(get_db)):
+    try:
+        
+        # First verify if user exists in database
+        user = db.query(User).filter(User.user_id == user_id).first()
+        if not user:
+            raise HTTPException(status_code=404, detail="User not found")
+        text = await process_pdf(file)
+        llm_service = LLMService()
+        
+        # Call process_resume which now handles job descriptions
+        basic_info, job_title, skills_data, content, thresholds, selected_prompts = await llm_service.process_resume(text)
+        
+        # Extract job details from basic_info
+        position_title = basic_info.get("position_title", "Not specified")
+        required_experience = basic_info.get("required_experience", "Not specified")
+        location = basic_info.get("location", "Not specified")
+        position_type = basic_info.get("position_type", "Not specified")
+        office_timings = basic_info.get("office_timings", "Not specified")
+        roles = [job_title]
+                
+        response_dict = {
+            "roles": roles,
+            "skills_data": {roles[0]: skills_data},
+            "content": content,
+            "analysis": {
+                "role": roles[0],
+                "skills": skills_data
+            },
+            "basic_info": {
+                "position_title": basic_info.get("position_title", "Not specified"),
+                "required_experience": basic_info.get("required_experience", "Not specified"),
+                "location":  basic_info.get("location", "Not specified"),
+                "position_type": basic_info.get("position_type", "Not specified"),
+                "office_timings": basic_info.get("office_timings", "Not specified")
+            }
+        }
+        
+        selection_threshold, rejection_threshold = thresholds
+        
+        try:
+            # Create JobDescription entry
+            job_description = JobDescription(
+                title=position_title,
+                description=content,
+                raw_text=text,
+                keywords=", ".join(selected_prompts),
+                status="Active",
+                department=basic_info.get("department", "Not specified"),
+                required_skills=str(skills_data.get("skills", {})),
+                experience_level=required_experience,
+                education_requirements=basic_info.get("education", "Not specified"),
+                threshold_score=selection_threshold
+            )
+            db.add(job_description)
+            db.flush()  # To get the job_id
+            
+            # Create ThresholdScore entry
+            threshold_score = ThresholdScore(
+                user_id=user_id,
+                job_id=job_description.job_id,
+                selection_score=selection_threshold,
+                rejection_score=rejection_threshold,
+                threshold_value=(selection_threshold + rejection_threshold) / 2,
+                threshold_result=response_dict,
+                threshold_prompts="\n".join(selected_prompts),
+                custom_prompts="",
+                sample_prompts_history=""
+            )
+            db.add(threshold_score)
+            
+            # Add required skills
+            for skill_name, skill_data in skills_data.get("skills", {}).items():
+                # First check if skill exists, if not create it
+                skill = db.query(Skill).filter_by(skill_name=skill_name).first()
+                if not skill:
+                    skill = Skill(
+                        skill_name=skill_name,
+                        skill_type="Technical"  # Default type
+                    )
+                    db.add(skill)
+                    db.flush()
+                
+                # Create JobRequiredSkills entry
+                job_skill = JobRequiredSkills(
+                    job_id=job_description.job_id,
+                    skill_id=skill.skill_id,
+                    importance=skill_data.get("importance", 0),
+                    selection_weight=skill_data.get("selection_score", 0),
+                    rejection_weight=skill_data.get("rejection_score", 0)
+                )
+                db.add(job_skill)
+
+            db.commit()
+        except Exception as db_error:
+            db.rollback()
+            logger.error(f"Database error: {str(db_error)}")
+        finally:
+            db.close()
+        
+   
+        return JobAnalysisResponse(
+            roles=roles,
+            skills_data={roles[0]: skills_data},
+            formatted_data=response_dict,
+            selection_threshold=selection_threshold,
+            rejection_threshold=rejection_threshold,
+            status="success",
+            raw_response=content,
+            selected_prompts=selected_prompts,
+            data = response_dict,
+            basic_info={
+                "position_title": position_title,
+                "required_experience": required_experience,
+                "location": location,
+                "position_type": position_type,
+                "office_timings": office_timings
+            }
+        )
+    except Exception as e:
+        logger.error(f"Analysis error: {str(e)}")
+
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@analyze_job_description_router.post("/api/job-description", response_model=Dict[str, Any])
+async def create_job_description(job_data: JobRequestData, db: Session = Depends(get_db)):
+    """
+    Process job description data and save to the database.
+    This endpoint handles:
+    1. Creating job description
+    2. Adding skills and their associations
+    3. Setting threshold scores
+    """
+    try:
+        # Extract role data - using first role if multiple roles exist
+        role = job_data.roles[0] if job_data.roles else "Not specified"
+        
+        # Extract skills data for this role
+        role_skills_data = job_data.skills_data.get(role, None)
+        if not role_skills_data:
+            raise HTTPException(status_code=400, detail="Skills data not found for specified role")
+        
+        # 1. Create Job Description entry
+        try:
+            # Safely serialize skills data to JSON
+            skills_json = json.dumps(role_skills_data.skills)
+        except (TypeError, ValueError):
+            # If serialization fails, create a simplified version
+            simplified_skills = {}
+            for key, value in role_skills_data.skills.items():
+                try:
+                    simplified_skills[key] = {
+                        "importance": float(value.importance) if value.importance is not None else 0.0,
+                        "selection_score": float(value.selection_score) if value.selection_score is not None else 0.0,
+                        "rejection_score": float(value.rejection_score) if value.rejection_score is not None else 0.0,
+                        "rating": int(value.rating) if value.rating is not None else 0
+                    }
+                except (TypeError, ValueError):
+                    simplified_skills[key] = {
+                        "importance": 0.0,
+                        "selection_score": 0.0,
+                        "rejection_score": 0.0,
+                        "rating": 0
+                    }
+            skills_json = json.dumps(simplified_skills)
+            
+        # Create job description with safe defaults for numeric values
+        job_desc = JobDescription(
+            title=job_data.basic_info.position_title,
+            description=job_data.content,
+            raw_text=job_data.content,  # Using content as raw text
+            keywords=None,  # Not provided in input
+            status="Active",  # Default status
+            department="Engineering - Software & QA",  # Default department
+            required_skills=skills_json,  # Store skills as JSON
+            experience_level=job_data.basic_info.required_experience,
+            education_requirements="Postgraduate (Any)",  # Default education
+            threshold_score=float(job_data.selection_threshold) if job_data.selection_threshold is not None else 0.0,
+            activity_type="JOB_CREATION",  # Default activity type
+            
+            # Threshold values with safe defaults
+            job_match_benchmark=65.0,
+            high_score_threshold=85.0,
+            high_match_threshold=80.0,
+            mid_score_threshold=70.0,
+            mid_match_threshold=60.0,
+            critical_skill_importance=80.0,
+            experience_score_multiplier=1.5
+        )
+        
+        db.add(job_desc)
+        db.flush()  # Flush to get job_id
+        
+        # 2. Process Skills and create JobRequiredSkills
+        skill_entries = []
+        for skill_name, skill_data in role_skills_data.skills.items():
+            # Check if skill exists, if not create it
+            skill = db.query(Skill).filter(Skill.skill_name == skill_name).first()
+            if not skill:
+                # Determine skill type with a more robust approach
+                skill_type = "Domain"  # Default type
+                technical_skills = ["Software Architecture", "Software Development", 
+                                    "Operating Systems", "Debugging", "Application Software"]
+                soft_skills = ["Technical Leadership", "Communication", "Teamwork", "Problem Solving"]
+                
+                if skill_name in technical_skills:
+                    skill_type = "Technical"
+                elif skill_name in soft_skills:
+                    skill_type = "Soft"
+                
+                skill = Skill(
+                    skill_name=skill_name,
+                    skill_type=skill_type,
+                    activity_type="JOB_CREATION"
+                )
+                db.add(skill)
+                db.flush()
+            
+            # Safely convert numeric values
+            try:
+                importance = float(skill_data.importance) if skill_data.importance is not None else 0.0
+            except (TypeError, ValueError):
+                importance = 0.0
+                
+            try:
+                selection_weight = float(skill_data.selection_score) if skill_data.selection_score is not None else 0.0
+            except (TypeError, ValueError):
+                selection_weight = 0.0
+                
+            try:
+                rejection_weight = float(skill_data.rejection_score) if skill_data.rejection_score is not None else 0.0
+            except (TypeError, ValueError):
+                rejection_weight = 0.0
+            
+            # Create JobRequiredSkills entry
+            job_skill = JobRequiredSkills(
+                job_id=job_desc.job_id,
+                skill_id=skill.skill_id,
+                importance=importance,
+                selection_weight=selection_weight,
+                rejection_weight=rejection_weight,
+                activity_type="JOB_CREATION"
+            )
+            db.add(job_skill)
+            skill_entries.append({"skill_name": skill_name, "skill_id": skill.skill_id})
+        
+        # 3. Create ThresholdScore entry
+        # Safely handle selected_prompts data
+        if job_data.selected_prompts and isinstance(job_data.selected_prompts, str):
+            selected_prompts = job_data.selected_prompts
+        else:
+            selected_prompts = None
+            
+        # Safely convert threshold values
+        try:
+            selection_threshold = float(job_data.selection_threshold) if job_data.selection_threshold is not None else 0.0
+        except (TypeError, ValueError):
+            selection_threshold = 0.0
+            
+        try:
+            rejection_threshold = float(job_data.rejection_threshold) if job_data.rejection_threshold is not None else 0.0
+        except (TypeError, ValueError):
+            rejection_threshold = 0.0
+            
+        threshold = ThresholdScore(
+            job_id=job_desc.job_id,
+            user_id=None,  # Not provided in input
+            selection_score=selection_threshold,
+            rejection_score=rejection_threshold,
+            threshold_value=75.0,  # Default threshold value
+            threshold_result=None,  # Will be calculated later
+            threshold_prompts=selected_prompts,
+            custom_prompts=None,  # Not provided in input
+            sample_prompts_history=None,  # Not provided in input
+            activity_type="JOB_CREATION",
+            threshold_history=None  # Will be populated later
+        )
+        db.add(threshold)
+        
+        # Commit all changes
+        db.commit()
+        
+        # Return response
+        return {
+            "status": "success",
+            "job_id": job_desc.job_id,
+            "skills_added": len(skill_entries),
+            "skills": skill_entries,
+            "threshold_id": threshold.threshold_id,
+            "message": "Job description and related data successfully saved"
+        }
+    
+    except HTTPException as he:
+        # Re-raise HTTP exceptions
+        db.rollback()
+        raise he
+    except Exception as e:
+        # Log the error details
+        logger.error(f"Error creating job description: {str(e)}")
+        db.rollback()
+        raise HTTPException(status_code=500, detail=f"Error creating job description: {str(e)}")

@@ -1,0 +1,14 @@
+1. Upload resume
+2. Generate Dashboard/Threshold score
+3. Modify Dashboard/Threshold score
+
+Change -- Modify to Create
+Add delete particular Skills/dashboard
+Only work on Threshold/JD management --- Backend and Frontend
+
+
+--------------------------------------
+
+Upload JD, Create Dashboards, Generate Question and Answers on each dashboard. 
+
+Upload Resume, Generate Dashboards, Generate Question and Answers on each dashboard. 

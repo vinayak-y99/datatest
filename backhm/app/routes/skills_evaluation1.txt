@@ -1,0 +1,436 @@
+from fastapi import APIRouter, HTTPException, UploadFile, File, Depends
+from app.services.llm_service import LLMService
+from app.services.dashboard_service import DashboardService
+from app.utils.helpers import process_pdf
+from app.database.connection import get_db
+from app.models.base import JobDescription, Skill, ThresholdScore, JobRequiredSkills, Report, User, JobRecruiterAssignment
+from app.models.base_models import JobAnalysisResponse, DashboardResponse
+from sqlalchemy.orm import Session
+import logging
+from pydantic import BaseModel
+from typing import List, Dict, Any
+
+analyze_job_description_router1 = APIRouter()
+create_dashboards_router = APIRouter()
+logger = logging.getLogger(__name__)
+
+
+class ThresholdUpdateRequest(BaseModel):
+    skills_data: Dict[str, Any]
+
+@analyze_job_description_router1.post("/analyze_job_description/", response_model=JobAnalysisResponse)
+async def analyze_job_description(user_id:str, file: UploadFile = File(...), db: Session = Depends(get_db)):
+    try:
+        
+        # First verify if user exists in database
+        user = db.query(User).filter(User.user_id == user_id).first()
+        if not user:
+            raise HTTPException(status_code=404, detail="User not found")
+        text = await process_pdf(file)
+        llm_service = LLMService()
+        
+        # Call process_resume which now handles job descriptions
+        basic_info, job_title, skills_data, content, thresholds, selected_prompts = await llm_service.process_resume(text)
+        
+        # Extract job details from basic_info
+        position_title = basic_info.get("position_title", "Not specified")
+        required_experience = basic_info.get("required_experience", "Not specified")
+        location = basic_info.get("location", "Not specified")
+        position_type = basic_info.get("position_type", "Not specified")
+        office_timings = basic_info.get("office_timings", "Not specified")
+        roles = [job_title]
+                
+        response_dict = {
+            "roles": roles,
+            "skills_data": {roles[0]: skills_data},
+            "content": content,
+            "analysis": {
+                "role": roles[0],
+                "skills": skills_data
+            },
+            "basic_info": {
+                "position_title": basic_info.get("position_title", "Not specified"),
+                "required_experience": basic_info.get("required_experience", "Not specified"),
+                "location":  basic_info.get("location", "Not specified"),
+                "position_type": basic_info.get("position_type", "Not specified"),
+                "office_timings": basic_info.get("office_timings", "Not specified")
+            }
+        }
+        
+        selection_threshold, rejection_threshold = thresholds
+        
+        try:
+            # Create JobDescription entry
+            job_description = JobDescription(
+                title=position_title,
+                description=content,
+                raw_text=text,
+                keywords=", ".join(selected_prompts),
+                status="Active",
+                department=basic_info.get("department", "Not specified"),
+                required_skills=str(skills_data.get("skills", {})),
+                experience_level=required_experience,
+                education_requirements=basic_info.get("education", "Not specified"),
+                threshold_score=selection_threshold
+            )
+            db.add(job_description)
+            db.flush()  # To get the job_id
+            
+            # Create ThresholdScore entry
+            threshold_score = ThresholdScore(
+                user_id=user_id,
+                job_id=job_description.job_id,
+                selection_score=selection_threshold,
+                rejection_score=rejection_threshold,
+                threshold_value=(selection_threshold + rejection_threshold) / 2,
+                threshold_result=response_dict,
+                threshold_prompts="\n".join(selected_prompts),
+                custom_prompts="",
+                sample_prompts_history=""
+            )
+            db.add(threshold_score)
+            
+            # Add required skills
+            for skill_name, skill_data in skills_data.get("skills", {}).items():
+                # First check if skill exists, if not create it
+                skill = db.query(Skill).filter_by(skill_name=skill_name).first()
+                if not skill:
+                    skill = Skill(
+                        skill_name=skill_name,
+                        skill_type="Technical"  # Default type
+                    )
+                    db.add(skill)
+                    db.flush()
+                
+                # Create JobRequiredSkills entry
+                job_skill = JobRequiredSkills(
+                    job_id=job_description.job_id,
+                    skill_id=skill.skill_id,
+                    importance=skill_data.get("importance", 0),
+                    selection_weight=skill_data.get("selection_score", 0),
+                    rejection_weight=skill_data.get("rejection_score", 0)
+                )
+                db.add(job_skill)
+
+            db.commit()
+        except Exception as db_error:
+            db.rollback()
+            logger.error(f"Database error: {str(db_error)}")
+        finally:
+            db.close()
+        
+   
+        return JobAnalysisResponse(
+            roles=roles,
+            skills_data={roles[0]: skills_data},
+            formatted_data=response_dict,
+            selection_threshold=selection_threshold,
+            rejection_threshold=rejection_threshold,
+            status="success",
+            raw_response=content,
+            selected_prompts=selected_prompts,
+            data = response_dict,
+            basic_info={
+                "position_title": position_title,
+                "required_experience": required_experience,
+                "location": location,
+                "position_type": position_type,
+                "office_timings": office_timings
+            }
+        )
+    except Exception as e:
+        logger.error(f"Analysis error: {str(e)}")
+
+        raise HTTPException(status_code=500, detail=str(e))
+
+@analyze_job_description_router1.post("/run_custom_prompt/")
+async def run_custom_prompt(prompt: str, db: Session = Depends(get_db)):
+    try:
+        # Existing code remains unchanged
+        llm_service = LLMService()
+        updated_skills_data = await llm_service.process_custom_prompt(prompt)
+        
+        dashboard_service = DashboardService()
+        selection_threshold, rejection_threshold = dashboard_service.calculate_threshold_scores(updated_skills_data)
+
+        response = {
+            "status": "success",
+            "updated_skills_data": updated_skills_data,
+            "selection_threshold": selection_threshold,
+            "rejection_threshold": rejection_threshold
+        }
+        
+        # Add database commit here
+        db = get_db()
+        try:
+            # Create ThresholdScore entry for custom prompt
+            threshold_score = ThresholdScore(
+                user_id=1,  # Default user ID, should be replaced with actual user ID
+                job_id=None,  # This is a custom prompt without a specific job
+                selection_score=selection_threshold,
+                rejection_score=rejection_threshold,
+                threshold_value=(selection_threshold + rejection_threshold) / 2,
+                threshold_result=response,
+                threshold_prompts="",
+                custom_prompts=prompt,
+                sample_prompts_history=""
+            )
+            db.add(threshold_score)
+            db.commit()
+        except Exception as db_error:
+            db.rollback()
+            logger.error(f"Database error: {str(db_error)}")
+        finally:
+            db.close()
+            
+        return response
+    except Exception as e:
+        logger.error(f"Custom prompt error: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@create_dashboards_router.post("/create-dashboards/", response_model=DashboardResponse)
+async def create_dashboards(
+    roles: List[str],
+    skills_data: Dict[str, Any],
+    number_of_dashboards: int = 1,
+    db: Session = Depends(get_db)
+):
+    try:
+        dashboard_service = DashboardService()
+        processed_data = []
+        
+        for role in roles:
+            if role in skills_data:
+                dashboard = dashboard_service.create_dynamic_dashboard(
+                    skills_data[role],
+                    'skills',
+                    {
+                        'number_of_dashboards': number_of_dashboards,
+                        'role': role
+                    }
+                )
+                
+                if 'splits' in dashboard:
+                    for split in dashboard['splits']:
+                        split['role'] = role
+                        processed_data.append(split)
+                else:
+                    processed_data.append({
+                        'title': f'{role} Dashboard',
+                        'description': f'Complete analysis for {role}',
+                        'data': dashboard['data'],
+                        'role': role
+                    })
+        
+        selection_threshold, rejection_threshold = dashboard_service.calculate_threshold_scores(skills_data)
+        
+        # Add database commit here
+        db = get_db()
+        try:
+            # Create Report entry
+            report = Report(
+                user_id=1,  # Default user ID, should be replaced with actual user ID
+                report_type="Dashboard",
+                report_data=str({
+                    "dashboards": processed_data,
+                    "selection_threshold": selection_threshold,
+                    "rejection_threshold": rejection_threshold
+                })
+            )
+            db.add(report)
+            db.commit()
+        except Exception as db_error:
+            db.rollback()
+            logger.error(f"Database error: {str(db_error)}")
+        finally:
+            db.close()
+        
+        return DashboardResponse(
+            status="success",
+            message=f"Successfully created {len(processed_data)} dashboards",
+            dashboards=processed_data,
+            selection_threshold=selection_threshold,
+            rejection_threshold=rejection_threshold,
+            number_of_dashboards=number_of_dashboards
+        )
+    except Exception as e:
+        logger.error(f"Dashboard creation error: {str(e)}")
+        return DashboardResponse(
+            status="error",
+            message=str(e),
+            dashboards=[],
+            selection_threshold=0,
+            rejection_threshold=0,
+            number_of_dashboards=0
+        )
+
+@analyze_job_description_router1.get("/get_job_analysis/{job_id}", response_model=JobAnalysisResponse)
+async def get_job_analysis(job_id: int, db: Session = Depends(get_db)):
+    try:
+        # Get latest job and threshold data
+        job = db.query(JobDescription).filter(JobDescription.job_id == job_id).first()
+        if not job:
+            raise HTTPException(status_code=404, detail="Job description not found")
+
+        # Get latest threshold score with all data
+        threshold = db.query(ThresholdScore).filter(ThresholdScore.job_id == job_id).order_by(ThresholdScore.created_at.desc()).first()
+
+        if threshold and threshold.threshold_result:
+            # Use the stored analysis results from threshold_result
+            response_dict = threshold.threshold_result
+            
+            # Get the latest thresholds
+            selection_threshold = threshold.selection_score
+            rejection_threshold = threshold.rejection_score
+            selected_prompts = threshold.threshold_prompts
+
+            return JobAnalysisResponse(
+                roles=response_dict["roles"],
+                skills_data=response_dict["skills_data"],
+                formatted_data=response_dict,
+                selection_threshold=float(selection_threshold),
+                rejection_threshold=float(rejection_threshold),
+                status="success",
+                raw_response=job.raw_text,
+                selected_prompts=selected_prompts,
+                basic_info=response_dict["basic_info"],
+                data=response_dict
+            )
+        else:
+            # If no threshold data exists, process the job description again
+            llm_service = LLMService()
+            basic_info, job_title, skills_data, content, thresholds, selected_prompts = await llm_service.process_resume(job.raw_text)
+            
+            response_dict = {
+                "roles": [job_title],
+                "skills_data": {job_title: skills_data},
+                "content": content,
+                "analysis": {
+                    "role": job_title,
+                    "skills": skills_data
+                },
+                "basic_info": basic_info
+            }
+
+            return JobAnalysisResponse(
+                roles=[job_title],
+                skills_data=response_dict["skills_data"],
+                formatted_data=response_dict,
+                selection_threshold=float(thresholds[0]),
+                rejection_threshold=float(thresholds[1]),
+                status="success",
+                raw_response=content,
+                selected_prompts=selected_prompts,
+                basic_info=basic_info,
+                data=response_dict
+            )
+
+    except Exception as e:
+        logger.error(f"Error retrieving job analysis: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@analyze_job_description_router1.put("/update_threshold_scores/{job_id}")
+async def update_threshold_scores(
+    job_id: int,
+    request: ThresholdUpdateRequest,
+    db: Session = Depends(get_db)
+):
+    try:
+        job = db.query(JobDescription).filter(JobDescription.job_id == job_id).first()
+        if not job:
+            raise HTTPException(status_code=404, detail="Job description not found")
+
+        recruiter_assignment = db.query(JobRecruiterAssignment).filter(
+            JobRecruiterAssignment.job_id == job_id
+        ).first()
+        
+        if not recruiter_assignment:
+            raise HTTPException(status_code=404, detail="No recruiter assigned to this job")
+
+        # Process the skills data through LLM service
+        llm_service = LLMService()
+        basic_info, job_title, updated_skills_data, content, thresholds, selected_prompts = await llm_service.process_resume(job.raw_text)
+        selection_threshold, rejection_threshold = thresholds
+
+        # Create new threshold score entry
+        threshold_score = ThresholdScore(
+            user_id=recruiter_assignment.user_id,
+            job_id=job_id,
+            selection_score=selection_threshold,
+            rejection_score=rejection_threshold,
+            threshold_value=(selection_threshold + rejection_threshold) / 2,
+            threshold_result=request.skills_data,
+            threshold_prompts="\n".join(selected_prompts),
+            threshold_history=request.skills_data
+        )
+        db.add(threshold_score)
+
+        # Update job description threshold
+        job.threshold_score = selection_threshold
+        
+        db.commit()
+
+        return {
+            "status": "success",
+            "message": "Threshold scores updated successfully",
+            "data": request.skills_data
+        }
+
+    except Exception as e:
+        db.rollback()
+        logger.error(f"Error updating threshold scores: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@analyze_job_description_router1.get("/job_analyses/", response_model=List[JobAnalysisResponse])
+async def get_all_job_analyses(db: Session = Depends(get_db)):
+    try: 
+        import json
+        
+        # Query all records from the threshold_scores table
+        analyses = db.query(ThresholdScore).all()
+        
+        if not analyses:
+            return []
+        
+        # Create a list to store the responses
+        response_list = []
+        
+        # Convert each database record to a response model
+        for analysis in analyses:
+            # Parse JSON data
+            threshold_result = json.loads(analysis.threshold_result) if isinstance(analysis.threshold_result, str) else analysis.threshold_result
+            
+            # Extract roles and skills_data from threshold_result
+            roles = threshold_result.get("roles", []) if threshold_result else []
+            skills_data = threshold_result.get("skills_data", {}) if threshold_result else {}
+            
+            # Construct the response dict
+            response_dict = {
+                "roles": roles,
+                "skills_data": skills_data,
+                "content": analysis.threshold_prompts,  # Using threshold_prompts as content
+                "analysis": {
+                    "role": roles[0] if roles else "",
+                    "skills": skills_data
+                },
+                "database_id": analysis.threshold_id
+            }
+            
+            # Create response object
+            response = JobAnalysisResponse(
+                roles=roles,
+                skills_data=skills_data,
+                formatted_data=response_dict,
+                selection_threshold=analysis.selection_score,
+                rejection_threshold=analysis.rejection_score,
+                status="success",
+                raw_response=analysis.threshold_prompts,
+                selected_prompts=analysis.custom_prompts or "",  # Use custom_prompts or empty string
+                database_id=analysis.threshold_id
+            )
+            response_list.append(response)
+        return response_list
+    except Exception as e:
+        logger.error(f"Error retrieving all job analyses: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
