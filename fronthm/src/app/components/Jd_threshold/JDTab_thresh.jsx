@@ -1,11 +1,10 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { FaUpload, FaEye, FaEyeSlash, FaTrash, FaSync, FaPlus, FaSave } from 'react-icons/fa';
 import DrawerNavigationJD from './DrawerNavigation';
 import JobDetailsCard from './JobDetailsCard';
 import JobCreateCard from './JobCreateCard';
 import CS from './page'; // Create--Modify
 import CS2 from './page2'; // View
-import UploadPopup from './UploadPopup';
 import axios from 'axios';
 
 const API_URL = 'http://127.0.0.1:8000/api';
@@ -24,9 +23,12 @@ const JDTab = ({ jdList, setJdList, setSelectedJDForSidebar }) => {
   const [showJobDetails, setShowJobDetails] = useState(false);
   const [selectedJobDetails, setSelectedJobDetails] = useState(null);
   const [jobDetailsLoading, setJobDetailsLoading] = useState(false);
-  const [showUploadPopup, setShowUploadPopup] = useState(false);
   const [selectedRows, setSelectedRows] = useState(new Set());
   const [showCreateJDModal, setShowCreateJDModal] = useState(false);
+  const [showConfirmationCard, setShowConfirmationCard] = useState(false);
+  const [extractedJobData, setExtractedJobData] = useState(null);
+  const [dashboardCount, setDashboardCount] = useState(8);
+  const fileInputRef = useRef(null);
   const recordsPerPage = 10;
   
   // Button configuration for top actions
@@ -101,109 +103,109 @@ const JDTab = ({ jdList, setJdList, setSelectedJDForSidebar }) => {
     }
   };
   
-  // Function to handle file upload
-  const handleFileUpload = async (file, dashboardCount) => {
-    if (file) {
-      const validFileTypes = [
-        'application/pdf',
-        'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-        'text/plain',
-        'application/json'
-      ];
+  // Function to trigger file input click
+  const triggerFileUpload = () => {
+    fileInputRef.current.click();
+  };
   
-      if (validFileTypes.includes(file.type)) {
-        setLoading(true);
-        setError(null);
-        
-        try {
-          const formData = new FormData();
-          formData.append('file', file);
-          formData.append('dashboard_count', dashboardCount);
-          
-          const response = await axios.post(
-            `${API_URL}/analyze_job_description/?user_id=1&num_dashboards=${dashboardCount}`,
-            formData,
-            {
-              headers: {
-                'Content-Type': 'multipart/form-data'
-              }
-            }
-          );
-          
-          if (response.data && response.data.status === 'success') {
-            console.log("API response:", response.data);
-            const newFile = {
-              id: Date.now() + Math.random(),
-              role: response.data.roles[0],
-              skills: response.data.skills_data,
-              achievements: response.data.achievements,
-              fileName: file.name,
-              uploadDate: new Date().toLocaleDateString(),
-              status: 'Success',
-              threshold: 'View',
-              matchScore: response.data.selection_threshold?.toFixed(2) || 0,
-              relevanceScore: response.data.rejection_threshold?.toFixed(2) || 0,
-              dashboardCount: dashboardCount,
-              fullData: {
-                ...response.data
-              },
-              file: file
-            };
-            
-            setJdList(prev => [...prev, newFile]);
-            setShowDashboard(true);
-          } else {
-            throw new Error('Invalid API response');
+  // Function to handle file selection
+  const handleFileSelect = async (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    
+    const validFileTypes = [
+      'application/pdf',
+      'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+      'text/plain',
+      'application/json'
+    ];
+    
+    if (!validFileTypes.includes(file.type)) {
+      alert("Please upload only PDF, DOCX, TXT, or JSON files.");
+      return;
+    }
+    
+    try {
+      setLoading(true);
+      setError(null);
+      
+      // Create form data for the API request
+      const formData = new FormData();
+      formData.append('file', file);
+      
+      // Call the extract_job_description endpoint directly
+      const response = await axios.post(
+        `${API_URL}/extract_job_description/?user_id=1`,
+        formData,
+        {
+          headers: {
+            'Content-Type': 'multipart/form-data'
           }
-        } catch (error) {
-          console.error('Error uploading file:', error);
-          setError(error.message || 'Failed to upload and process the file');
-          
-          const newFile = {
-            id: Date.now() + Math.random(),
-            role: 'Error',
-            position: 'N/A',
-            fileName: file.name,
-            uploadDate: new Date().toLocaleDateString(),
-            status: 'Error',
-            threshold: 'N/A',
-            matchScore: 0,
-            relevanceScore: 0,
-            dashboardCount: dashboardCount,
-            file: file,
-          };
-          
-          setJdList(prev => [...prev, newFile]);
-        } finally {
-          setLoading(false);
         }
+      );
+      
+      if (response.data) {
+        // Add the extracted job to the jdList
+        const newJob = {
+          id: response.data.job_id || Date.now().toString(),
+          job_id: response.data.job_id || Date.now().toString(),
+          role: response.data.position_title || response.data.roles?.[0] || 'New Job',
+          skills: response.data.skills_data || {},
+          fileName: file.name,
+          uploadDate: new Date().toLocaleDateString(),
+          status: 'Success',
+          threshold: 'View',
+          matchScore: '0.75',
+          relevanceScore: '0.25',
+          fullData: {
+            ...response.data,
+            file_name: file.name
+          }
+        };
+        
+        setJdList(prev => [...prev, newJob]);
+        alert('Job description uploaded successfully!');
       } else {
-        alert("Please upload only PDF, DOCX, TXT, or JSON files.");
+        throw new Error('Invalid API response');
       }
+    } catch (error) {
+      console.error('Error extracting job description:', error);
+      setError(error.message || 'Failed to extract job description from file');
+    } finally {
+      setLoading(false);
+      // Reset the file input
+      e.target.value = '';
     }
   };
-
+  
   // Function to handle row deletion
   const handleDelete = (id) => {
+    console.log(`Deleting item with id: ${id}`);
+    
+    // Filter out the deleted item from jdList
     const updatedList = jdList.filter(item => item.id !== id);
     setJdList(updatedList);
     
+    // If expanded section is being deleted, collapse it
     if (expandedSection === id) {
       setExpandedSection(null);
     }
     
+    // Remove from selected rows
     setSelectedRows(prev => {
       const newSelected = new Set(prev);
       newSelected.delete(id);
       return newSelected;
     });
     
+    // Remove from editing thresholds
     setEditingThresholds(prev => {
       const newEditing = {...prev};
       delete newEditing[id];
       return newEditing;
     });
     
+    // Remove from editable thresholds
     setEditableThresholds(prev => {
       const newThresholds = {...prev};
       delete newThresholds[id];
@@ -227,6 +229,9 @@ const JDTab = ({ jdList, setJdList, setSelectedJDForSidebar }) => {
   // Function to handle opening the sidebar drawer
   const handleModifyClick = (item) => {
     if (item.threshold === 'View' && item.status !== 'Error') {
+      console.log("Selected JD for modification:", item);
+      console.log("Job ID for modification:", item.job_id);
+      
       setSelectedJD(item);
       if (setSelectedJDForSidebar) {
         setSelectedJDForSidebar(item);
@@ -526,6 +531,15 @@ const JDTab = ({ jdList, setJdList, setSelectedJDForSidebar }) => {
 
   return (
     <div>
+      {/* Hidden file input */}
+      <input
+        type="file"
+        ref={fileInputRef}
+        onChange={handleFileSelect}
+        className="hidden"
+        accept=".pdf,.docx,.txt,.json"
+      />
+      
       <div className="flex justify-between items-center mb-0 mt-8">
         <p style={{ fontSize: '18px', marginLeft: '4px' }}>Job Descriptions</p>
         <div className="flex gap-4">
@@ -533,7 +547,7 @@ const JDTab = ({ jdList, setJdList, setSelectedJDForSidebar }) => {
             <div key={label}>
               {label === 'Upload JD' ? (
                 <button
-                  onClick={() => setShowUploadPopup(true)}
+                  onClick={triggerFileUpload}
                   className="p-2 text-gray-700 rounded hover:bg-gray-100 flex items-center"
                 >
                   {buttonConfig[label].icon}
@@ -601,7 +615,13 @@ const JDTab = ({ jdList, setJdList, setSelectedJDForSidebar }) => {
                             onChange={() => handleRowSelect(item.id)}
                             className="h-4 w-4 text-blue-600 border-gray-300 rounded"
                           />
-                          <button onClick={() => handleDelete(item.id)} className="text-red-500 hover:text-red-700">
+                          <button 
+                            onClick={(e) => {
+                              e.stopPropagation(); // Prevent event bubbling
+                              handleDelete(item.id);
+                            }} 
+                            className="text-red-500 hover:text-red-700"
+                          >
                             <FaTrash />
                           </button>
                         </div>
@@ -671,6 +691,7 @@ const JDTab = ({ jdList, setJdList, setSelectedJDForSidebar }) => {
                           <div className="bg-white rounded-lg shadow-md p-4">
                             <CS
                               jdId={item.id}
+                              jobId={item.job_id}
                               selectedFile={item.file}
                               jdData={{
                                 apiResponse: {
@@ -725,6 +746,7 @@ const JDTab = ({ jdList, setJdList, setSelectedJDForSidebar }) => {
       {isDrawerOpen && selectedJD && (
         <DrawerNavigationJD
           selectedJd={selectedJD}
+          jobId={selectedJD.job_id}
           onClose={handleDrawerClose}
         />
       )}
@@ -734,13 +756,6 @@ const JDTab = ({ jdList, setJdList, setSelectedJDForSidebar }) => {
           jobDetails={selectedJobDetails} 
           loading={jobDetailsLoading} 
           onClose={handleCloseJobDetails} 
-        />
-      )}
-      
-      {showUploadPopup && (
-        <UploadPopup
-          onClose={() => setShowUploadPopup(false)}
-          onUpload={handleFileUpload}
         />
       )}
       

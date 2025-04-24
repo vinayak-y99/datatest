@@ -470,24 +470,6 @@ export default function Threshold({ jdData = {} }) {
                           </h2>
                           <div className="flex items-center gap-4">
                             <div className="flex items-center gap-2">
-                              <span className="text-sm font-medium text-gray-700">
-                                Number of dashboards: 5
-                              </span>
-                              <input
-                                type="range"
-                                min="1"
-                                max="10"
-                                step="1"
-                                defaultValue="5"
-                                className="w-24 h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer accent-blue-500"
-                              />
-                            </div>
-                            <button 
-                              className="bg-indigo-600 text-white py-1 px-3 rounded-md hover:bg-indigo-700 transition-colors text-sm"
-                            >
-                              Create Dashboards
-                            </button>
-                            <div className="flex items-center gap-2">
                               <span className="text-base text-gray-600">
                                 {useRatings ? 'Ratings (0-10)' : 'Importance (0-100%)'}
                               </span>

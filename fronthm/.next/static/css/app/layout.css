@@ -2551,10 +2551,6 @@ video {
   padding-left: 2rem;
   padding-right: 2rem;
 }
-.px-\[1px\] {
-  padding-left: 1px;
-  padding-right: 1px;
-}
 .py-0\.5 {
   padding-top: 0.125rem;
   padding-bottom: 0.125rem;

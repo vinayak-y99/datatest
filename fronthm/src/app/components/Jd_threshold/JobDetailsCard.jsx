@@ -346,11 +346,11 @@ const JobDetailsCard = ({ jobDetails, loading, onClose, isCreating = false, newJ
                                   <div className="grid grid-cols-2 gap-4">
                                     <div className="p-3 bg-green-50 rounded border border-green-200">
                                       <p className="text-sm text-gray-600">Selection Score</p>
-                                      <p className="text-lg font-medium">{jobDetails.threshold_scores.selection_score.toFixed(2)}</p>
+                                      <p className="text-lg font-medium">{jobDetails.threshold_scores.selection_score?.toFixed(2) || 'N/A'}</p>
                                     </div>
                                     <div className="p-3 bg-red-50 rounded border border-red-200">
                                       <p className="text-sm text-gray-600">Rejection Score</p>
-                                      <p className="text-lg font-medium">{jobDetails.threshold_scores.rejection_score.toFixed(2)}</p>
+                                      <p className="text-lg font-medium">{jobDetails.threshold_scores.rejection_score?.toFixed(2) || 'N/A'}</p>
                                     </div>
                                   </div>
                                 </div>

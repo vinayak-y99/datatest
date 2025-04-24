@@ -14,7 +14,7 @@ from app.services.dashboard_service import DashboardService
 from app.services.llm_service import LLMService
 from fastapi import APIRouter, FastAPI, HTTPException, Depends, File, UploadFile, Query
 from io import BytesIO
-from app.models.base import JobDescription, JobRequiredSkills, Skill, ThresholdScore, User
+from app.models.base import JobDescription, JobRequiredSkills, Skill, ThresholdScore, User, JobRecruiterAssignment
 import app.database.connection as get_db
 import re
 # Database connection
@@ -39,12 +39,405 @@ analyze_job_description_router = APIRouter()
 create_dashboards_router = APIRouter()
 logger = logging.getLogger(__name__)
 
-@analyze_job_description_router.post("/api/analyze_job_description/", response_model=JobAnalysisResponse)
-async def analyze_job_description(user_id: str, file: UploadFile = File(...), 
-                                 num_dashboards: int = Query(ge=1, le=10),
-                                 db: Session = Depends(get_db)):
+
+# Define response models
+class JobDescriptionResponse(BaseModel):
+    job_id: int
+    title: str
+    description: str
+    raw_text: str
+    status: str
+    basic_info: Dict[str, str]
+
+class DashboardResponse(BaseModel):
+    job_id: int
+    roles: List[str]
+    skills_data: Dict[str, Any]
+    formatted_data: Dict[str, Any]
+    status: str
+    raw_response: str
+    selected_prompts: str
+    data: Dict[str, Any]
+    # Optional fields for backward compatibility
+    selection_threshold: Optional[int] = 0
+    rejection_threshold: Optional[int] = 0
+    
+# @analyze_job_description_router.post("/api/analyze_job_description/", response_model=JobAnalysisResponse)
+# async def analyze_job_description(user_id: str, file: UploadFile = File(...), 
+#                                  num_dashboards: int = Query(ge=1, le=10),
+#                                  db: Session = Depends(get_db)):
+#     try:
+#         # First verify if user exists in database
+#         user = db.query(User).filter(User.user_id == user_id).first()
+#         if not user:
+#             raise HTTPException(status_code=404, detail="User not found")
+        
+#         # Extract text from PDF
+#         text = await process_pdf(file)
+        
+#         # Initialize LLM service
+#         llm_service = LLMService()
+        
+#         # Create the job description template with dynamic dashboard count
+#         job_description_template = """Analyze this job description and extract the following information to create {num_dashboards} distinct dashboards for visualizing different aspects of the job:
+
+# Basic Information:
+# - Position Title: [Job Title]
+# - Required Experience: [X years]
+# - Location: [City, State/Country]
+# - Contact: [Email and/or Phone if available]
+# - Position Type: [Contract or Permanent]
+# - Department: [Department name]
+# - Office Timings: [Morning shift or Night shift]
+# - Education Requirements: [Required education level]
+
+# For Dashboard #1 (Required Skills):
+# Extract key technical skills with their importance (%), rating (out of 10).
+
+# For the remaining {remaining_dashboards} dashboards, extract different categories of job requirements. These could include but are not limited to:
+# - Technical qualifications
+# - Soft skills
+# - Certifications
+# - Domain knowledge
+# - Industry experience
+# - Management abilities
+# - Communication skills
+# - Project management skills
+# - Cloud/infrastructure expertise
+# - Specialized tools proficiency
+
+# For EACH dashboard category, provide:
+# - Category name (e.g., "Technical Skills", "Soft Skills", "Certifications")
+# - 3-7 items within that category
+# - For each item: Name, Importance (%), Rating (out of 10)
+
+# Importance Score (Sum: 100% per category): Represents the relative priority of each item based on prominence in the job description.
+# Rating: Score out of 10 calculated as (Importance × 10 ÷ highest importance percentage in that category)
+
+# Format your response with CONSISTENT structure as follows with one blank line between each section:
+
+# Basic Information:
+# - Position Title: [Job Title]
+# - Required Experience: [X years]
+# - Location: [City, State/Country]
+# - Contact: [Email and/or Phone if available]
+# - Position Type: [Contract or Permanent]
+# - Department: [Department name]
+# - Office Timings: [Morning shift or Night shift]
+# - Education Requirements: [Required education level]
+
+# Primary Responsibilities: [Main job duties]
+
+# if {num_dashboards} = 1:
+# Then only output Dashboard #1 - Required Skills:
+# - [Skill Name]: Importance: [X]% Rating: [R]/10
+# - [Next Skill]: Importance: [X]% Rating: [R]/10
+# if {num_dashboards} = 2 :
+# Dashboard #1 - Required Skills:
+# - [Skill Name]: Importance: [X]% Rating: [R]/10
+# - [Next Skill]: Importance: [X]% Rating: [R]/10
+
+# Dashboard #2 - [Category Name]:
+# - [Item Name]: Importance: [X]% Rating: [R]/10
+# - [Next Item]: Importance: [X]% Rating: [R]/10
+
+# if {num_dashboards} = 3 or more:
+# Dashboard #1 - Required Skills:
+# - [Skill Name]: Importance: [X]% Rating: [R]/10
+# - [Next Skill]: Importance: [X]% Rating: [R]/10
+
+# Dashboard #2 - [Category Name]:
+# - [Item Name]: Importance: [X]% Rating: [R]/10
+# - [Next Item]: Importance: [X]% Rating: [R]/10
+
+# Dashboard #3 - [Category Name]:
+# - [Item Name]: Importance: [X]% Rating: [R]/10
+# - [Next Item]: Importance: [X]% Rating: [R]/10
+
+# (Continue for all {num_dashboards} dashboards)
+
+# Rules:
+# - You MUST extract the position title, required experience, and location if available
+# - If exact years of experience aren't stated, estimate based on seniority level
+# - Importance percentages should sum to 100% within each category
+# - Each dashboard category MUST be different and distinct
+# - if {num_dashboards} = 1, then only output Dashboard #1 - Required Skills, if {num_dashboards} = 2, then only output Dashboard #1 - Required Skills and Dashboard #2 - [Category Name]
+# - Each dashboard MUST have at least 3 items
+# - Numbers should be rounded to one decimal place
+# - If information for a requested dashboard is not available in the job description, create a relevant category that would be useful for this job position
+# - For threshold recommendations, use standard ranges based on job complexity and seniority
+
+# Job Description:
+# {context}"""
+        
+#         # Calculate remaining dashboards
+#         remaining_dashboards = max(0, num_dashboards - 1)
+        
+#         # Format the template with the appropriate values
+#         prompt = job_description_template.format(
+#             num_dashboards=num_dashboards,
+#             remaining_dashboards=remaining_dashboards,
+#             context=text
+#         )
+        
+#         # Call LLM with our custom prompt
+#         analysis_result = await llm_service.generate_with_gemini(prompt)
+        
+#         # Parse the analysis results with categories preserved
+#         basic_info, skills_data, content, thresholds, selected_prompts = await parse_job_analysis(analysis_result)
+
+#         # Extract job details from basic_info
+#         position_title = basic_info.get("Position Title", "Not specified")
+#         required_experience = basic_info.get("Required Experience", "Not specified")
+#         location = basic_info.get("Location", "Not specified")
+#         position_type = basic_info.get("Position Type", "Not specified")
+#         office_timings = basic_info.get("Office Timings", "Not specified")
+#         department = basic_info.get("Department", "Not specified")
+#         education = basic_info.get("Education Requirements", "Not specified")
+#         job_title = position_title
+#         roles = [job_title]
+        
+#         # This removes the duplicate "skills" field and the nested "categories" structure
+#         cleaned_skills_data = {key: value for key, value in skills_data.items() 
+#                             if key not in ["skills", "categories"]}
+
+#         # When preparing the response dictionary
+#         response_dict = {
+#             "roles": roles,
+#             "skills_data": {roles[0]: cleaned_skills_data},  # Only the non-duplicate categories
+#             "content": content,
+#             "analysis": {
+#                 "role": roles[0],
+#                 "skills": cleaned_skills_data  # Include all skill categories
+#             },
+#             "basic_info": {
+#                 "position_title": position_title,
+#                 "required_experience": required_experience,
+#                 "location": location,
+#                 "position_type": position_type,
+#                 "office_timings": office_timings,
+#                 "department": department,
+#                 "education": education
+#             }
+#         }
+        
+#         selection_threshold, rejection_threshold = thresholds
+        
+#         # Convert selected_prompts from list to string
+#         selected_prompts_str = "\n".join(selected_prompts) if selected_prompts else ""
+        
+#         try:
+#             # Create JobDescription entry with categorized skills
+#             job_description = JobDescription(
+#                 title=position_title,
+#                 description=content,
+#                 raw_text=text,
+#                 keywords=", ".join(selected_prompts) if selected_prompts else "",
+#                 status="Active",
+#                 department=department,
+#                 required_skills=json.dumps(cleaned_skills_data),  # Store all non-duplicate categories
+#                 experience_level=required_experience,
+#                 education_requirements=education,
+#                 threshold_score=selection_threshold
+#         )
+#             db.add(job_description)
+#             db.flush()  # To get the job_id
+                
+#                 # Create ThresholdScore entry
+#             threshold_score = ThresholdScore(
+#                     user_id=user_id,
+#                     job_id=job_description.job_id,
+#                     selection_score=selection_threshold,
+#                     rejection_score=rejection_threshold,
+#                     threshold_value=(selection_threshold + rejection_threshold) / 2,
+#                     threshold_result=response_dict,
+#                     threshold_prompts=selected_prompts_str,
+#                     custom_prompts="",
+#                     sample_prompts_history=""
+#                 )
+#             db.add(threshold_score)
+                
+#             # Add required skills (without category field)
+#             # for skill_name, skill_data in skills_data["skills"].items():
+#             #     # First check if skill exists, if not create it
+#             #     skill = db.query(Skill).filter_by(skill_name=skill_name).first()
+#             #     if not skill:
+#             #         # Determine skill type from the categories mapping
+#             #         skill_type = "Technical"  # Default type
+                    
+#             #         # Find which category this skill belongs to
+#             #         for category_name, category_skills in skills_data["categories"].items():
+#             #             if skill_name in category_skills:
+#             #                 skill_type = map_category_to_skill_type(category_name)
+#             #                 break
+                            
+#             #         skill = Skill(
+#             #             skill_name=skill_name,
+#             #             skill_type=skill_type
+#             #         )
+#             #         db.add(skill)
+#             #         db.flush()
+                
+#             #     # Create JobRequiredSkills entry without category
+#             # job_skill = JobRequiredSkills(
+#             #     job_id=job_description.job_id,
+#             #     skill_id=skill.skill_id,
+#             #     importance=skill_data.get("importance", 0),
+#             #     selection_weight=skill_data.get("selection_score", 0),
+#             #     rejection_weight=skill_data.get("rejection_score", 0)
+#             # )
+#             # db.add(job_skill)
+            
+#             db.commit()
+#         except Exception as db_error:
+#             db.rollback()
+#             logger.error(f"Database error: {str(db_error)}")
+#             raise HTTPException(status_code=500, detail=f"Database error: {str(db_error)}")
+#         finally:
+#             db.close()
+        
+#         return JobAnalysisResponse(
+#             roles=roles,
+#             skills_data={roles[0]: skills_data},
+#             formatted_data=response_dict,
+#             selection_threshold=selection_threshold,
+#             rejection_threshold=rejection_threshold,
+#             status="success",
+#             raw_response=content,
+#             selected_prompts=selected_prompts_str,
+#             data=response_dict,
+#             basic_info={
+#                 "position_title": position_title,
+#                 "required_experience": required_experience,
+#                 "location": location,
+#                 "position_type": position_type,
+#                 "office_timings": office_timings,
+#                 "department": department,
+#                 "education": education
+#             }
+#         )
+#     except Exception as e:
+#         logger.error(f"Analysis error: {str(e)}")
+#         raise HTTPException(status_code=500, detail=str(e))
+
+# # Helper function to map category names to skill types
+# def map_category_to_skill_type(category_name):
+#     category_name = category_name.lower()
+#     if any(term in category_name for term in ['technical', 'programming', 'development', 'coding']):
+#         return "Technical"
+#     elif any(term in category_name for term in ['soft', 'communication', 'interpersonal']):
+#         return "Soft Skill"
+#     elif any(term in category_name for term in ['certification', 'qualification']):
+#         return "Certification"
+#     elif any(term in category_name for term in ['domain', 'industry', 'business']):
+#         return "Domain Knowledge"
+#     elif any(term in category_name for term in ['management', 'leadership']):
+#         return "Management"
+#     else:
+#         return "Other"
+
+# async def parse_job_analysis(analysis_result):
+#     # Extract basic info
+#     basic_info = {}
+#     basic_info_match = re.search(r'Basic Information:(.*?)(?:Primary Responsibilities:|Dashboard #1)', analysis_result, re.DOTALL)
+#     if basic_info_match:
+#         basic_info_text = basic_info_match.group(1)
+#         for line in basic_info_text.strip().split('\n'):
+#             if ':' in line:
+#                 key, value = line.split(':', 1)
+#                 key = key.strip('- ')
+#                 basic_info[key] = value.strip()
+    
+#     # Extract dashboard content
+#     dashboard_pattern = r'Dashboard #(\d+) - ([^:]+):(.*?)(?=Dashboard #\d+|Threshold Recommendations:|$)'
+#     dashboard_matches = re.findall(dashboard_pattern, analysis_result, re.DOTALL)
+    
+#     # Initialize dynamic categories structure
+#     skills_data = {}
+#     selected_prompts = []
+    
+#     # Process each dashboard
+#     for dashboard_num, dashboard_name, dashboard_content in dashboard_matches:
+#         dashboard_name = dashboard_name.strip()
+#         category_key = dashboard_name.lower().replace(' ', '_')
+#         selected_prompts.append(f"Skills category: {dashboard_name}")
+        
+#         # Create a new category if it doesn't exist
+#         if category_key not in skills_data:
+#             skills_data[category_key] = {}
+        
+#         # Process items in this dashboard
+#         for item_line in dashboard_content.strip().split('\n'):
+#             if ':' in item_line:
+#                 item_parts = item_line.strip('- ').split(':', 1)
+#                 if len(item_parts) >= 2:
+#                     item_name = item_parts[0].strip()
+#                     selected_prompts.append(f"Item: {item_name}")
+                    
+#                     # Extract metrics
+#                     importance_match = re.search(r'Importance: (\d+(?:\.\d+)?)%', item_line)
+#                     rating_match = re.search(r'Rating: (\d+(?:\.\d+)?)/10', item_line)
+                    
+#                     importance = float(importance_match.group(1)) if importance_match else 0
+#                     rating = float(rating_match.group(1)) if rating_match else 0
+                    
+#                     # Add item data to the appropriate category
+#                     skills_data[category_key][item_name] = {
+#                         "importance": importance,
+#                         "rating": rating
+#                     }
+                    
+#                     # Also add to a special "skills" category for backward compatibility
+#                     # Only if the dashboard is the "Required Skills" dashboard or first dashboard
+#                     if dashboard_num == "1" or "required skills" in dashboard_name.lower():
+#                         if "skills" not in skills_data:
+#                             skills_data["skills"] = {}
+#                         skills_data["skills"][item_name] = {
+#                             "importance": importance,
+#                             "rating": rating
+#                         }
+    
+#     # Extract threshold recommendations
+#     thresholds_match = re.search(r'Threshold Recommendations:(.*?)', analysis_result, re.DOTALL)
+#     selection_threshold = 70
+#     rejection_threshold = 30
+
+#     # Create a categories structure for backward compatibility
+#     categories = {}
+#     for category_name, category_items in skills_data.items():
+#         if category_name != "skills":  # Skip the special skills category
+#             categories[category_name] = category_items
+
+#     # Add categories to skills_data
+#     skills_data["categories"] = categories
+
+#     return basic_info, skills_data, analysis_result, (selection_threshold, rejection_threshold), selected_prompts
+
+# async def generate_with_gemini(self, prompt_text):
+#     """Generate content using Gemini API."""
+#     try:
+#         api_key = "AIzaSyB3ZN_ICuWtHUypL1vhvORWA7KwoNiKVMw"  # Replace with actual key management
+#         import google.generativeai as genai
+        
+#         # Configure the API
+#         genai.configure(api_key=api_key)
+        
+#         # Initialize the model
+#         model = genai.GenerativeModel('gemini-2.0-flash')
+        
+#         # Generate the analysis
+#         response = await model.generate_content_async(prompt_text)
+        
+#         # Return the analysis text
+#         return response.text
+#     except Exception as e:
+#         logger.error(f"Error generating with Gemini: {str(e)}")
+#         raise Exception(f"Error generating with Gemini: {str(e)}")
+# First Endpoint: Extract Job Description Information
+@analyze_job_description_router.post("/api/extract_job_description/", response_model=JobDescriptionResponse)
+async def extract_job_description(user_id: str, file: UploadFile = File(...), db: Session = Depends(get_db)):
     try:
-        # First verify if user exists in database
+        # Verify if user exists
         user = db.query(User).filter(User.user_id == user_id).first()
         if not user:
             raise HTTPException(status_code=404, detail="User not found")
@@ -55,8 +448,8 @@ async def analyze_job_description(user_id: str, file: UploadFile = File(...),
         # Initialize LLM service
         llm_service = LLMService()
         
-        # Create the job description template with dynamic dashboard count
-        job_description_template = """Analyze this job description and extract the following information to create {num_dashboards} distinct dashboards for visualizing different aspects of the job:
+        # Create the job description extraction template
+        job_info_template = """Extract only the basic information from this job description:
 
 Basic Information:
 - Position Title: [Job Title]
@@ -68,8 +461,122 @@ Basic Information:
 - Office Timings: [Morning shift or Night shift]
 - Education Requirements: [Required education level]
 
+Primary Responsibilities: [Main job duties]
+
+Format your response with the following structure:
+Basic Information:
+- Position Title: [Job Title]
+- Required Experience: [X years]
+- Location: [City, State/Country]
+- Contact: [Email and/or Phone if available]
+- Position Type: [Contract or Permanent]
+- Department: [Department name]
+- Office Timings: [Morning shift or Night shift]
+- Education Requirements: [Required education level]
+
+Primary Responsibilities: [Main job duties]
+
+Rules:
+- You MUST extract the position title, required experience, and location if available
+- If exact years of experience aren't stated, estimate based on seniority level
+
+Job Description:
+{context}"""
+        
+        # Format the template with the appropriate values
+        prompt = job_info_template.format(context=text)
+        
+        # Call LLM with our custom prompt
+        extraction_result = await llm_service.generate_with_gemini(prompt)
+        
+        # Parse the extraction results
+        basic_info, responsibilities = await parse_job_info(extraction_result)
+        
+        # Extract job details from basic_info
+        position_title = basic_info.get("Position Title", "Not specified")
+        required_experience = basic_info.get("Required Experience", "Not specified")
+        location = basic_info.get("Location", "Not specified")
+        position_type = basic_info.get("Position Type", "Not specified")
+        office_timings = basic_info.get("Office Timings", "Not specified")
+        department = basic_info.get("Department", "Not specified")
+        education = basic_info.get("Education Requirements", "Not specified")
+        contact = basic_info.get("Contact", "Not specified")
+                
+        try:
+            # Create JobDescription entry - Set required_skills to NULL
+            job_description = JobDescription(
+                title=position_title,
+                description=responsibilities,
+                raw_text=text,
+                keywords="",  # Will be populated in the second endpoint
+                status="Active",
+                department=department,
+                required_skills="",  # Set to NULL initially
+                experience_level=required_experience,
+                education_requirements=education,
+                threshold_score=70  # Default threshold score
+            )
+            db.add(job_description)
+            db.commit()
+            db.refresh(job_description)
+                
+            # Associate the job with the user who created it
+            job_recruiter_assignment = JobRecruiterAssignment(
+                job_id=job_description.job_id,
+                user_id=user.user_id,
+                assigned_date=datetime.utcnow()
+            )
+            db.add(job_recruiter_assignment)
+            db.commit()
+                
+            return JobDescriptionResponse(
+                job_id=job_description.job_id,
+                title=position_title,
+                description=responsibilities,
+                raw_text=text,
+                status="success",
+                basic_info={
+                    "position_title": position_title,
+                    "required_experience": required_experience,
+                    "location": location,
+                    "position_type": position_type,
+                    "office_timings": office_timings,
+                    "department": department,
+                    "education": education,
+                    "contact": contact
+                }
+            )
+        except Exception as db_error:
+            db.rollback()
+            logger.error(f"Database error: {str(db_error)}")
+            raise HTTPException(status_code=500, detail=f"Database error: {str(db_error)}")
+        finally:
+            db.close()
+    except Exception as e:
+        logger.error(f"Extraction error: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+# Second Endpoint: Create Dashboards
+@analyze_job_description_router.post("/api/create_dashboards/", response_model=DashboardResponse)
+async def create_dashboards(job_id: int, num_dashboards: int = Query(ge=1, le=10), db: Session = Depends(get_db)):
+    try:
+        # Retrieve job description from database
+        job_description = db.query(JobDescription).filter(JobDescription.job_id == job_id).first()
+        if not job_description:
+            raise HTTPException(status_code=404, detail="Job description not found")
+        
+        # Get the user_id from job assignment
+        job_assignment = db.query(JobRecruiterAssignment).filter(JobRecruiterAssignment.job_id == job_id).first()
+        user_id = job_assignment.user_id if job_assignment else None
+        
+        # Initialize LLM service
+        llm_service = LLMService()
+        
+        # Create the dashboard template with dynamic dashboard count
+        dashboard_template = """Analyze this job description and extract information to create {num_dashboards} distinct dashboards for visualizing different aspects of the job:
+
 For Dashboard #1 (Required Skills):
-Extract key technical skills with their importance (%), selection score (%), rejection score (%), and rating (out of 10).
+Extract key technical skills with their importance (%), rating (out of 10).
 
 For the remaining {remaining_dashboards} dashboards, extract different categories of job requirements. These could include but are not limited to:
 - Technical qualifications
@@ -86,79 +593,51 @@ For the remaining {remaining_dashboards} dashboards, extract different categorie
 For EACH dashboard category, provide:
 - Category name (e.g., "Technical Skills", "Soft Skills", "Certifications")
 - 3-7 items within that category
-- For each item: Name, Importance (%), Selection Score (%), Rejection Score (%), Rating (out of 10)
+- For each item: Name, Importance (%), Rating (out of 10)
 
 Importance Score (Sum: 100% per category): Represents the relative priority of each item based on prominence in the job description.
-Selection Score (Sum: 100% across all items): Indicates how much each item contributes to candidate selection.
-Rejection Score (Sum: 100% across all items): Indicates how much lacking each item would impact candidate's rejection.
 Rating: Score out of 10 calculated as (Importance × 10 ÷ highest importance percentage in that category)
 
 Format your response with CONSISTENT structure as follows with one blank line between each section:
 
-Basic Information:
-- Position Title: [Job Title]
-- Required Experience: [X years]
-- Location: [City, State/Country]
-- Contact: [Email and/or Phone if available]
-- Position Type: [Contract or Permanent]
-- Department: [Department name]
-- Office Timings: [Morning shift or Night shift]
-- Education Requirements: [Required education level]
-
-Primary Responsibilities: [Main job duties]
-
 if {num_dashboards} = 1:
 Then only output Dashboard #1 - Required Skills:
-- [Skill Name]: Importance: [X]% Selection Score: [Y]% Rejection Score: [Z]% Rating: [R]/10
-- [Next Skill]: Importance: [X]% Selection Score: [Y]% Rejection Score: [Z]% Rating: [R]/10
-
+- [Skill Name]: Importance: [X]% Rating: [R]/10
+- [Next Skill]: Importance: [X]% Rating: [R]/10
 if {num_dashboards} = 2 :
 Dashboard #1 - Required Skills:
-- [Skill Name]: Importance: [X]% Selection Score: [Y]% Rejection Score: [Z]% Rating: [R]/10
-- [Next Skill]: Importance: [X]% Selection Score: [Y]% Rejection Score: [Z]% Rating: [R]/10
+- [Skill Name]: Importance: [X]% Rating: [R]/10
+- [Next Skill]: Importance: [X]% Rating: [R]/10
 
 Dashboard #2 - [Category Name]:
-- [Item Name]: Importance: [X]% Selection Score: [Y]% Rejection Score: [Z]% Rating: [R]/10
-- [Next Item]: Importance: [X]% Selection Score: [Y]% Rejection Score: [Z]% Rating: [R]/10
+- [Item Name]: Importance: [X]% Rating: [R]/10
+- [Next Item]: Importance: [X]% Rating: [R]/10
 
 if {num_dashboards} = 3 or more:
 Dashboard #1 - Required Skills:
-- [Skill Name]: Importance: [X]% Selection Score: [Y]% Rejection Score: [Z]% Rating: [R]/10
-- [Next Skill]: Importance: [X]% Selection Score: [Y]% Rejection Score: [Z]% Rating: [R]/10
+- [Skill Name]: Importance: [X]% Rating: [R]/10
+- [Next Skill]: Importance: [X]% Rating: [R]/10
 
 Dashboard #2 - [Category Name]:
-- [Item Name]: Importance: [X]% Selection Score: [Y]% Rejection Score: [Z]% Rating: [R]/10
-- [Next Item]: Importance: [X]% Selection Score: [Y]% Rejection Score: [Z]% Rating: [R]/10
+- [Item Name]: Importance: [X]% Rating: [R]/10
+- [Next Item]: Importance: [X]% Rating: [R]/10
 
 Dashboard #3 - [Category Name]:
-- [Item Name]: Importance: [X]% Selection Score: [Y]% Rejection Score: [Z]% Rating: [R]/10
-- [Next Item]: Importance: [X]% Selection Score: [Y]% Rejection Score: [Z]% Rating: [R]/10
+- [Item Name]: Importance: [X]% Rating: [R]/10
+- [Next Item]: Importance: [X]% Rating: [R]/10
 
 (Continue for all {num_dashboards} dashboards)
 
 Threshold Recommendations:
-- Job Match Benchmark: [X]%
-- High Score Threshold: [X]%
-- High Match Threshold: [X]%
-- Mid Score Threshold: [X]%
-- Mid Match Threshold: [X]%
-- Critical Skill Importance: [X]%
-- Experience Score Multiplier: [X.X]
-- Overall Threshold Value: [X]%
-- Selection Threshold: [X]%
-- Rejection Threshold: [X]%
+Selection Threshold: 70%
+Rejection Threshold: 30%
 
 Rules:
-- You MUST extract the position title, required experience, and location if available
-- If exact years of experience aren't stated, estimate based on seniority level
-- Importance percentages should sum to 100% within each category
-- Selection and Rejection scores should each sum to 100% across all items
 - Each dashboard category MUST be different and distinct
 - if {num_dashboards} = 1, then only output Dashboard #1 - Required Skills, if {num_dashboards} = 2, then only output Dashboard #1 - Required Skills and Dashboard #2 - [Category Name]
 - Each dashboard MUST have at least 3 items
 - Numbers should be rounded to one decimal place
 - If information for a requested dashboard is not available in the job description, create a relevant category that would be useful for this job position
-- For threshold recommendations, use standard ranges based on job complexity and seniority
 
 Job Description:
 {context}"""
@@ -167,50 +646,34 @@ Job Description:
         remaining_dashboards = max(0, num_dashboards - 1)
         
         # Format the template with the appropriate values
-        prompt = job_description_template.format(
+        prompt = dashboard_template.format(
             num_dashboards=num_dashboards,
             remaining_dashboards=remaining_dashboards,
-            context=text
+            context=job_description.raw_text
         )
         
         # Call LLM with our custom prompt
-        analysis_result = await llm_service.generate_with_gemini(prompt)
+        dashboard_result = await llm_service.generate_with_gemini(prompt)
         
-        # Parse the analysis results with categories preserved
-        basic_info, skills_data, content, thresholds, selected_prompts = await parse_job_analysis(analysis_result)
-
-        # Extract job details from basic_info
-        position_title = basic_info.get("Position Title", "Not specified")
-        required_experience = basic_info.get("Required Experience", "Not specified")
-        location = basic_info.get("Location", "Not specified")
-        position_type = basic_info.get("Position Type", "Not specified")
-        office_timings = basic_info.get("Office Timings", "Not specified")
-        department = basic_info.get("Department", "Not specified")
-        education = basic_info.get("Education Requirements", "Not specified")
-        job_title = position_title
+        # Parse the dashboard results
+        skills_data, content, thresholds, selected_prompts = await parse_dashboards(dashboard_result)
+        
+        # Extract job title from job_description
+        job_title = job_description.title
         roles = [job_title]
         
-        # This removes the duplicate "skills" field and the nested "categories" structure
+        # Clean up skills data structure
         cleaned_skills_data = {key: value for key, value in skills_data.items() 
-                            if key not in ["skills", "categories"]}
-
-        # When preparing the response dictionary
+                              if key not in ["skills", "categories"]}
+              
+        # Build response dictionary
         response_dict = {
             "roles": roles,
-            "skills_data": {roles[0]: cleaned_skills_data},  # Only the non-duplicate categories
+            "skills_data": {roles[0]: cleaned_skills_data},
             "content": content,
             "analysis": {
                 "role": roles[0],
-                "skills": cleaned_skills_data  # Include all skill categories
-            },
-            "basic_info": {
-                "position_title": position_title,
-                "required_experience": required_experience,
-                "location": location,
-                "position_type": position_type,
-                "office_timings": office_timings,
-                "department": department,
-                "education": education
+                "skills": cleaned_skills_data
             }
         }
         
@@ -220,119 +683,52 @@ Job Description:
         selected_prompts_str = "\n".join(selected_prompts) if selected_prompts else ""
         
         try:
-            # Create JobDescription entry with categorized skills
-            job_description = JobDescription(
-                title=position_title,
-                description=content,
-                raw_text=text,
-                keywords=", ".join(selected_prompts) if selected_prompts else "",
-                status="Active",
-                department=department,
-                required_skills=json.dumps(cleaned_skills_data),  # Store all non-duplicate categories
-                experience_level=required_experience,
-                education_requirements=education,
-                threshold_score=selection_threshold
-        )
-            db.add(job_description)
-            db.flush()  # To get the job_id
-                
-                # Create ThresholdScore entry
+            # Update JobDescription with skills data
+            job_description.required_skills = json.dumps(cleaned_skills_data)
+            job_description.keywords = ", ".join(selected_prompts) if selected_prompts else ""
+            job_description.threshold_score = selection_threshold
+            
+            # Create ThresholdScore entry
             threshold_score = ThresholdScore(
-                    user_id=user_id,
-                    job_id=job_description.job_id,
-                    selection_score=selection_threshold,
-                    rejection_score=rejection_threshold,
-                    threshold_value=(selection_threshold + rejection_threshold) / 2,
-                    threshold_result=response_dict,
-                    threshold_prompts=selected_prompts_str,
-                    custom_prompts="",
-                    sample_prompts_history=""
-                )
+                user_id=user_id,
+                job_id=job_id,
+                selection_score=selection_threshold,
+                rejection_score=rejection_threshold, 
+                threshold_value=(selection_threshold + rejection_threshold) / 2,
+                threshold_result=response_dict,
+                threshold_prompts=selected_prompts_str,
+                custom_prompts="",
+                sample_prompts_history=""
+            )
             db.add(threshold_score)
-                
-            # Add required skills (without category field)
-            # for skill_name, skill_data in skills_data["skills"].items():
-            #     # First check if skill exists, if not create it
-            #     skill = db.query(Skill).filter_by(skill_name=skill_name).first()
-            #     if not skill:
-            #         # Determine skill type from the categories mapping
-            #         skill_type = "Technical"  # Default type
-                    
-            #         # Find which category this skill belongs to
-            #         for category_name, category_skills in skills_data["categories"].items():
-            #             if skill_name in category_skills:
-            #                 skill_type = map_category_to_skill_type(category_name)
-            #                 break
-                            
-            #         skill = Skill(
-            #             skill_name=skill_name,
-            #             skill_type=skill_type
-            #         )
-            #         db.add(skill)
-            #         db.flush()
-                
-            #     # Create JobRequiredSkills entry without category
-            # job_skill = JobRequiredSkills(
-            #     job_id=job_description.job_id,
-            #     skill_id=skill.skill_id,
-            #     importance=skill_data.get("importance", 0),
-            #     selection_weight=skill_data.get("selection_score", 0),
-            #     rejection_weight=skill_data.get("rejection_score", 0)
-            # )
-            # db.add(job_skill)
             
             db.commit()
+            
+            return DashboardResponse(
+                job_id=job_id,
+                roles=roles,
+                skills_data={roles[0]: skills_data},
+                formatted_data=response_dict,
+                status="success",
+                raw_response=content,
+                selected_prompts=selected_prompts_str,
+                data=response_dict
+            )
         except Exception as db_error:
             db.rollback()
             logger.error(f"Database error: {str(db_error)}")
             raise HTTPException(status_code=500, detail=f"Database error: {str(db_error)}")
         finally:
             db.close()
-        
-        return JobAnalysisResponse(
-            roles=roles,
-            skills_data={roles[0]: skills_data},
-            formatted_data=response_dict,
-            selection_threshold=selection_threshold,
-            rejection_threshold=rejection_threshold,
-            status="success",
-            raw_response=content,
-            selected_prompts=selected_prompts_str,
-            data=response_dict,
-            basic_info={
-                "position_title": position_title,
-                "required_experience": required_experience,
-                "location": location,
-                "position_type": position_type,
-                "office_timings": office_timings,
-                "department": department,
-                "education": education
-            }
-        )
     except Exception as e:
-        logger.error(f"Analysis error: {str(e)}")
+        logger.error(f"Dashboard creation error: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
 
-# Helper function to map category names to skill types
-def map_category_to_skill_type(category_name):
-    category_name = category_name.lower()
-    if any(term in category_name for term in ['technical', 'programming', 'development', 'coding']):
-        return "Technical"
-    elif any(term in category_name for term in ['soft', 'communication', 'interpersonal']):
-        return "Soft Skill"
-    elif any(term in category_name for term in ['certification', 'qualification']):
-        return "Certification"
-    elif any(term in category_name for term in ['domain', 'industry', 'business']):
-        return "Domain Knowledge"
-    elif any(term in category_name for term in ['management', 'leadership']):
-        return "Management"
-    else:
-        return "Other"
-
-async def parse_job_analysis(analysis_result):
+# Helper function to parse job basic information
+async def parse_job_info(extraction_result):
     # Extract basic info
     basic_info = {}
-    basic_info_match = re.search(r'Basic Information:(.*?)(?:Primary Responsibilities:|Dashboard #1)', analysis_result, re.DOTALL)
+    basic_info_match = re.search(r'Basic Information:(.*?)(?:Primary Responsibilities:|$)', extraction_result, re.DOTALL)
     if basic_info_match:
         basic_info_text = basic_info_match.group(1)
         for line in basic_info_text.strip().split('\n'):
@@ -341,9 +737,17 @@ async def parse_job_analysis(analysis_result):
                 key = key.strip('- ')
                 basic_info[key] = value.strip()
     
+    # Extract responsibilities
+    responsibilities_match = re.search(r'Primary Responsibilities:(.*?)$', extraction_result, re.DOTALL)
+    responsibilities = responsibilities_match.group(1).strip() if responsibilities_match else ""
+    
+    return basic_info, responsibilities
+
+# Helper function to parse dashboard information
+async def parse_dashboards(dashboard_result):
     # Extract dashboard content
     dashboard_pattern = r'Dashboard #(\d+) - ([^:]+):(.*?)(?=Dashboard #\d+|Threshold Recommendations:|$)'
-    dashboard_matches = re.findall(dashboard_pattern, analysis_result, re.DOTALL)
+    dashboard_matches = re.findall(dashboard_pattern, dashboard_result, re.DOTALL)
     
     # Initialize dynamic categories structure
     skills_data = {}
@@ -369,20 +773,14 @@ async def parse_job_analysis(analysis_result):
                     
                     # Extract metrics
                     importance_match = re.search(r'Importance: (\d+(?:\.\d+)?)%', item_line)
-                    selection_match = re.search(r'Selection Score: (\d+(?:\.\d+)?)%', item_line)
-                    rejection_match = re.search(r'Rejection Score: (\d+(?:\.\d+)?)%', item_line)
                     rating_match = re.search(r'Rating: (\d+(?:\.\d+)?)/10', item_line)
                     
                     importance = float(importance_match.group(1)) if importance_match else 0
-                    selection_score = float(selection_match.group(1)) if selection_match else 0
-                    rejection_score = float(rejection_match.group(1)) if rejection_match else 0
                     rating = float(rating_match.group(1)) if rating_match else 0
                     
                     # Add item data to the appropriate category
                     skills_data[category_key][item_name] = {
                         "importance": importance,
-                        "selection_score": selection_score,
-                        "rejection_score": rejection_score,
                         "rating": rating
                     }
                     
@@ -393,60 +791,56 @@ async def parse_job_analysis(analysis_result):
                             skills_data["skills"] = {}
                         skills_data["skills"][item_name] = {
                             "importance": importance,
-                            "selection_score": selection_score,
-                            "rejection_score": rejection_score,
                             "rating": rating
                         }
     
     # Extract threshold recommendations
-    thresholds_match = re.search(r'Threshold Recommendations:(.*?)', analysis_result, re.DOTALL)
+    thresholds_match = re.search(r'Threshold Recommendations:(.*?)', dashboard_result, re.DOTALL)
     selection_threshold = 70
     rejection_threshold = 30
     
     if thresholds_match:
         thresholds_text = thresholds_match.group(1)
-        selection_match = re.search(r'Selection Threshold: (\d+(?:\.\d+)?)%', thresholds_text)
-        rejection_match = re.search(r'Rejection Threshold: (\d+(?:\.\d+)?)%', thresholds_text)
+        selection_match = re.search(r'Selection Threshold: (\d+)%', thresholds_text)
+        rejection_match = re.search(r'Rejection Threshold: (\d+)%', thresholds_text)
         
         if selection_match:
-            selection_threshold = float(selection_match.group(1))
+            selection_threshold = int(selection_match.group(1))
         if rejection_match:
-            rejection_threshold = float(rejection_match.group(1))
-    
-    # At the end of parse_job_analysis, before returning:
+            rejection_threshold = int(rejection_match.group(1))
 
     # Create a categories structure for backward compatibility
     categories = {}
     for category_name, category_items in skills_data.items():
-        if category_name != "Skills":  # Skip the special skills category
+        if category_name != "skills":  # Skip the special skills category
             categories[category_name] = category_items
 
     # Add categories to skills_data
     skills_data["categories"] = categories
 
-    return basic_info, skills_data, analysis_result, (selection_threshold, rejection_threshold), selected_prompts
+    return skills_data, dashboard_result, (selection_threshold, rejection_threshold), selected_prompts
 
-async def generate_with_gemini(self, prompt_text):
-    """Generate content using Gemini API."""
-    try:
-        api_key = "AIzaSyB3ZN_ICuWtHUypL1vhvORWA7KwoNiKVMw"  # Replace with actual key management
-        import google.generativeai as genai
-        
-        # Configure the API
-        genai.configure(api_key=api_key)
-        
-        # Initialize the model
-        model = genai.GenerativeModel('gemini-2.0-flash')
-        
-        # Generate the analysis
-        response = await model.generate_content_async(prompt_text)
-        
-        # Return the analysis text
-        return response.text
-    except Exception as e:
-        logger.error(f"Error generating with Gemini: {str(e)}")
-        raise Exception(f"Error generating with Gemini: {str(e)}")
-    
+# Define response models
+class JobDescriptionResponse(BaseModel):
+    job_id: int
+    title: str
+    description: str
+    raw_text: str
+    status: str
+    basic_info: Dict[str, str]
+
+class DashboardResponse(BaseModel):
+    job_id: int
+    roles: List[str]
+    skills_data: Dict[str, Any]
+    formatted_data: Dict[str, Any]
+    status: str
+    raw_response: str
+    selected_prompts: str
+    data: Dict[str, Any]
+    # Optional fields for backward compatibility
+    selection_threshold: Optional[int] = 0
+    rejection_threshold: Optional[int] = 0
 # Get individual JobDescription
 @analyze_job_description_router.get("/api/job-description/{job_id}", response_model=Dict[str, Any])
 async def get_job_description(job_id: int, db: Session = Depends(get_db)):
@@ -482,12 +876,7 @@ async def get_job_description(job_id: int, db: Session = Depends(get_db)):
         if threshold:
             threshold_data = {
                 "threshold_id": threshold.threshold_id,
-                "selection_score": threshold.selection_score,
-                "rejection_score": threshold.rejection_score,
-                "threshold_value": threshold.threshold_value,
                 "threshold_prompts": threshold.threshold_prompts,
-                "created_at": threshold.created_at.isoformat() if threshold.created_at else None,
-                "updated_at": threshold.updated_at.isoformat() if threshold.updated_at else None
             }
         
         # Return combined data
@@ -615,23 +1004,13 @@ async def get_all_job_analyses(db: Session = Depends(get_db)):
                 "job_id": analysis.job_id
             }
             
-            # Create response object with safe default values for numeric fields
-            try:
-                selection_threshold = float(analysis.selection_score) if analysis.selection_score is not None else 0.0
-            except (ValueError, TypeError):
-                selection_threshold = 0.0
-                
-            try:
-                rejection_threshold = float(analysis.rejection_score) if analysis.rejection_score is not None else 0.0
-            except (ValueError, TypeError):
-                rejection_threshold = 0.0
-            
+            # Create response object without selection_threshold and rejection_threshold
             response = JobAnalysisResponse(
                 roles=roles,
                 skills_data=skills_data,
                 formatted_data=response_dict,
-                selection_threshold=selection_threshold,
-                rejection_threshold=rejection_threshold,
+                selection_threshold=0.0,
+                rejection_threshold=0.0,
                 status="success",
                 job_id=job_id,
                 raw_response=threshold_prompts,
@@ -662,8 +1041,6 @@ async def get_threshold_details(threshold_id: int, db: Session = Depends(get_db)
         # Base response with threshold data
         response = {
             "threshold_id": threshold.threshold_id,
-            "selection_score": threshold.selection_score,
-            "rejection_score": threshold.rejection_score,
             "threshold_prompts": threshold.threshold_prompts,
         }
         

@@ -10,7 +10,8 @@ const Sidebar = ({
     onCreate,
     sendSelectedRoles,
     onRoleSelect,
-    onDashboardUpdate
+    onDashboardUpdate,
+    jobId
 }) => {
     const [selectedRoles, setSelectedRoles] = useState([]);
     const [dashboardCount, setDashboardCount] = useState(5); // Default to 5 on scale
@@ -281,36 +282,81 @@ const Sidebar = ({
                 sendSelectedRoles(selectedRoles);
                 sendRangeValue(dashboardCount);
 
-                // If your backend requires the uploaded file, you might need to handle that separately
-                const userId = "1"; // Replace with actual user ID retrieval
+                // Use the jobId provided as prop instead of trying to extract from URL
+                // Default to a valid number if not provided - FastAPI expects a number
+                const currentJobId = jobId && !isNaN(parseInt(jobId)) ? parseInt(jobId) : 1;
+                console.log("Using job_id:", currentJobId);
                 
-                // Call the analyze_job_description endpoint with the dashboard count
-                const response = await fetch(`/api/analyze_job_description/?num_dashboards=${dashboardCount}`, {
+                // Call the create_dashboards endpoint with the job_id and dashboard count
+                const response = await fetch(`http://127.0.0.1:8000/api/create_dashboards/?job_id=${currentJobId}&num_dashboards=${dashboardCount}`, {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json',
                     },
                     body: JSON.stringify({
-                        user_id: userId,
-                        roles: selectedRoles,
                         num_dashboards: dashboardCount
                     }),
                 });
                 
-                if (!response.ok) {
-                    const errorData = await response.json();
-                    throw new Error(errorData.detail || 'Failed to create dashboard');
+                console.log("Response status:", response.status);
+                console.log("Response headers:", Object.fromEntries([...response.headers]));
+                
+                // Check for empty response
+                const responseText = await response.text();
+                console.log("Raw response:", responseText);
+                
+                let responseData = {};
+                if (responseText) {
+                    try {
+                        responseData = JSON.parse(responseText);
+                    } catch (parseError) {
+                        console.error("Error parsing response:", parseError);
+                        setError(`Error parsing API response: ${responseText.substring(0, 100)}...`);
+                    }
                 }
                 
-                const data = await response.json();
-                console.log("Dashboard created successfully:", data);
+                if (!response.ok) {
+                    const statusText = response.statusText || "";
+                    let errorMessage = `API Error (${response.status}): ${statusText}`;
+                    
+                    // Handle different error types
+                    if (response.status === 422) {
+                        console.error("Validation Error Details:", responseData);
+                        
+                        // Format validation errors (typical FastAPI format)
+                        if (responseData.detail && Array.isArray(responseData.detail)) {
+                            const validationErrors = responseData.detail.map(err => 
+                                `${err.loc.join('.')} - ${err.msg}`
+                            ).join('; ');
+                            errorMessage += ` - Validation errors: ${validationErrors}`;
+                        } else if (typeof responseData.detail === 'object') {
+                            errorMessage += ` - ${JSON.stringify(responseData.detail)}`;
+                        } else if (responseData.detail) {
+                            errorMessage += ` - ${responseData.detail}`;
+                        }
+                    } else {
+                        // For other errors
+                        if (responseData.detail) {
+                            errorMessage += ` - ${typeof responseData.detail === 'object' ? 
+                                JSON.stringify(responseData.detail) : responseData.detail}`;
+                        }
+                    }
+                    
+                    console.error(errorMessage);
+                    throw new Error(errorMessage);
+                }
+                
+                console.log("Dashboard created successfully:", responseData);
                 
                 // Pass the response data to the parent component
-                onCreate({
-                  roles: selectedRoles,
-                  skills_data: filteredSkillsData,
-                  num_dashboards: dashboardCount
-              });
+                if (onCreate) {
+                  onCreate({
+                    roles: responseData.roles || selectedRoles,
+                    skills_data: responseData.skills_data || filteredSkillsData,
+                    num_dashboards: dashboardCount,
+                    ...responseData
+                  });
+                }
               
               setMessage("Created dashboard for selected roles");
               setIsLoading(false);
@@ -324,6 +370,30 @@ const Sidebar = ({
 
     return (
         <div className="p-4 bg-white rounded-lg shadow-md">
+            <div className="mb-6">
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Number of Dashboards: {dashboardCount}
+                </label>
+                <input
+                    type="range"
+                    min="1"
+                    max={Math.max(10, availableDashboards.length)}
+                    value={dashboardCount}
+                    onChange={handleDashboardCountChange}
+                    className="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer"
+                />
+                <div className="flex justify-between text-xs text-gray-500 mt-1">
+                    <span>1</span>
+                    <span>{Math.max(10, availableDashboards.length)}</span>
+                </div>
+            </div>
+            <button
+                onClick={handleCreate}
+                className="w-full mb-6 py-2 px-4 bg-indigo-600 text-white rounded-md hover:bg-indigo-700 transition-colors disabled:bg-gray-400"
+                disabled={selectedRoles.length === 0 || selectedDashboards.length === 0 || isLoading}
+            >
+                {isLoading ? "Creating..." : "Create Dashboard"}
+            </button>
             <div className="mb-6 border rounded-lg p-4">
                 <label htmlFor="promptInput" className="block text-sm font-medium text-gray-700 mb-2">
                     Enter Prompt

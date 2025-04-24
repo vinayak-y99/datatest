@@ -1,4 +1,4 @@
-from pydantic import BaseModel, EmailStr, ConfigDict
+from pydantic import BaseModel, EmailStr, ConfigDict, Field
 from sqlalchemy import Enum
 from typing import List, Dict, Any, Optional, Union
 from datetime import datetime
@@ -6,27 +6,29 @@ from datetime import datetime
 
 class SkillData(BaseModel):
     importance: float
-    selection_score: float
-    rejection_score: float
-    rating: float
+    rating: int
 
 class JobAnalysisResponse(BaseModel):
     roles: List[str]
     skills_data: Dict[str, Any]
     formatted_data: Dict[str, Any]
-    selection_threshold: float
-    rejection_threshold: float
     status: str
     raw_response: str
     selected_prompts: str
     basic_info: Dict[str, str]
+    data: Dict[str, Any]
+    # Optional fields for backward compatibility
+    selection_threshold: Optional[float] = 0.0
+    rejection_threshold: Optional[float] = 0.0
+
 class DashboardResponse(BaseModel):
     status: str
     message: str
     dashboards: List[Dict[str, Any]]
-    selection_threshold: float
-    rejection_threshold: float
     number_of_dashboards: int
+    # Optional fields for backward compatibility
+    selection_threshold: Optional[float] = 0.0
+    rejection_threshold: Optional[float] = 0.0
 
 class ErrorResponse(BaseModel):
     status: str
@@ -277,13 +279,6 @@ class LoginRequest(BaseModel):
     password: str
 
 
-class SkillData(BaseModel):
-    importance: float
-    selection_score: float
-    rejection_score: float
-    rating: float
-
-
 class SkillCategory(BaseModel):
     skills: Dict[str, Dict[str, float]]
     achievements: Dict[str, Dict[str, float]]
@@ -294,8 +289,6 @@ class JobAnalysisResponse(BaseModel):
     roles: List[str]
     skills_data: Dict[str, Any]
     formatted_data: Dict[str, Any]
-    selection_threshold: float
-    rejection_threshold: float
     status: str
     raw_response: str
     selected_prompts: str
@@ -307,9 +300,10 @@ class DashboardResponse(BaseModel):
     status: str
     message: str
     dashboards: List[Dict[str, Any]]
-    selection_threshold: float
-    rejection_threshold: float
     number_of_dashboards: int
+    # Optional fields for backward compatibility
+    selection_threshold: Optional[float] = 0.0
+    rejection_threshold: Optional[float] = 0.0
 
 
 class ErrorResponse(BaseModel):
@@ -436,12 +430,6 @@ class JobDetailsInput(BaseModel):
     qualifications: Optional[List[str]] = None
     skills: Optional[List[str]] = None
 
-class SkillData(BaseModel):
-    importance: float
-    selection_score: float
-    rejection_score: float
-    rating: int
-
 class BasicInfo(BaseModel):
     position_title: str
     required_experience: str
@@ -451,14 +439,10 @@ class BasicInfo(BaseModel):
 
 class QualificationData(BaseModel):
     importance: float
-    selection_score: float
-    rejection_score: float
     rating: int
 
 class RequirementData(BaseModel):
     importance: float
-    selection_score: float
-    rejection_score: float
     rating: int
 
 
@@ -472,8 +456,9 @@ class JobRequestData(BaseModel):
     skills_data: Dict[str, SkillsData]
     formatted_data: Optional[Dict[str, Any]] = None
     content: str
-    selection_threshold: float
-    rejection_threshold: float
     basic_info: BasicInfo
     selected_prompts: Optional[str] = None
+    # Optional fields for backward compatibility
+    selection_threshold: Optional[float] = 0.0
+    rejection_threshold: Optional[float] = 0.0
 
