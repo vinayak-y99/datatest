@@ -1,4 +1,4 @@
-// File: D:\PresentProject\1204\frontend\src\app\hiring\page.jsx
+// File: D:\projects\CompleteHM\completeHM\fronthm\src\app\hiring\page.jsx
 import * as entry from '../../../../src/app/hiring/page.js'
 import type { ResolvingMetadata, ResolvingViewport } from 'next/dist/lib/metadata/types/metadata-interface.js'
 

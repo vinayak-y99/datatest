@@ -19,7 +19,7 @@ const JDTab = ({ jdList, setJdList, setSelectedJDForSidebar }) => {
   const [currentPage, setCurrentPage] = useState(1);
   const [activeDisplayId, setActiveDisplayId] = useState(null);
   const [error, setError] = useState(null);
-  const [editableThresholds, setEditableThresholds] = useState({});x`x`
+  const [editableThresholds, setEditableThresholds] = useState({});
   const [editingThresholds, setEditingThresholds] = useState({});
   const [showJobDetails, setShowJobDetails] = useState(false);
   const [selectedJobDetails, setSelectedJobDetails] = useState(null);
