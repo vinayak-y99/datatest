@@ -341,31 +341,32 @@ const Sidebar = ({
                     className="mt-3 w-full py-2 px-4 bg-green-600 text-white rounded-md hover:bg-green-700 transition-colors disabled:bg-gray-400"
                     disabled={!message.trim() || isLoading}
                 >
-                    Submit Prompt
+                    {isLoading ? "Processing..." : "Submit Prompt"}
                 </button>
+                
                 <div className="mt-4">
                     <p className="text-sm font-medium text-gray-700 mb-2">Sample Prompts:</p>
-                    <div className="space-y-2">
+                    <div className="grid grid-cols-1 gap-2">
                         <div 
-                            className="p-2 bg-gray-100 rounded cursor-pointer hover:bg-gray-200"
+                            className="p-2 bg-gray-100 rounded cursor-pointer hover:bg-gray-200 text-sm transition-colors"
                             onClick={() => setMessage("Set JavaScript's selection score to 85.5%")}
                         >
                             Set JavaScript's selection score to 85.5%
                         </div>
                         <div 
-                            className="p-2 bg-gray-100 rounded cursor-pointer hover:bg-gray-200"
+                            className="p-2 bg-gray-100 rounded cursor-pointer hover:bg-gray-200 text-sm transition-colors"
                             onClick={() => setMessage("Update React's rating to 4.5")}
                         >
                             Update React's rating to 4.5
                         </div>
                         <div 
-                            className="p-2 bg-gray-100 rounded cursor-pointer hover:bg-gray-200"
+                            className="p-2 bg-gray-100 rounded cursor-pointer hover:bg-gray-200 text-sm transition-colors"
                             onClick={() => setMessage("Change TypeScript's importance to 90.0%")}
                         >
                             Change TypeScript's importance to 90.0%
                         </div>
                         <div 
-                            className="p-2 bg-gray-100 rounded cursor-pointer hover:bg-gray-200"
+                            className="p-2 bg-gray-100 rounded cursor-pointer hover:bg-gray-200 text-sm transition-colors"
                             onClick={() => setMessage("Adjust Node.js's rejection score to 25.0%")}
                         >
                             Adjust Node.js's rejection score to 25.0%

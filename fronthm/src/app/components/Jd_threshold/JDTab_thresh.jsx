@@ -17,7 +17,7 @@ const JDTab = ({ jdList, setJdList, setSelectedJDForSidebar }) => {
   const [selectedJD, setSelectedJD] = useState(null);
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
   const [currentPage, setCurrentPage] = useState(1);
-  const [activeDisplayId, setActiveDisplayId] = useState(null);
+  const [expandedSection, setExpandedSection] = useState(null);
   const [error, setError] = useState(null);
   const [editableThresholds, setEditableThresholds] = useState({});
   const [editingThresholds, setEditingThresholds] = useState({});
@@ -188,8 +188,8 @@ const JDTab = ({ jdList, setJdList, setSelectedJDForSidebar }) => {
     const updatedList = jdList.filter(item => item.id !== id);
     setJdList(updatedList);
     
-    if (activeDisplayId === id) {
-      setActiveDisplayId(null);
+    if (expandedSection === id) {
+      setExpandedSection(null);
     }
     
     setSelectedRows(prev => {
@@ -236,10 +236,14 @@ const JDTab = ({ jdList, setJdList, setSelectedJDForSidebar }) => {
   };
 
   // Function to handle display toggling (the key function we're fixing)
-  const handleDisplayClick = (item) => {
-    // Toggle the active display ID
-    // If this item is already active, deactivate it; otherwise activate it
-    setActiveDisplayId(currentId => currentId === item.id ? null : item.id);
+  const handleDisplayClick = (itemId) => {
+    // If the section is already expanded, close it
+    if (expandedSection === itemId) {
+      setExpandedSection(null);
+    } else {
+      // Otherwise, expand this section
+      setExpandedSection(itemId);
+    }
   };
 
   // Function to handle closing the drawer
@@ -580,108 +584,110 @@ const JDTab = ({ jdList, setJdList, setSelectedJDForSidebar }) => {
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Selection Score</th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Rejection Score</th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Threshold</th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider"></th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Details</th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">View</th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Job Description</th>
               </tr>
             </thead>
             <tbody className="bg-white divide-y divide-gray-200">
-              {paginatedList.map((item) => (
-                <React.Fragment key={item.id}>
-                  <tr className={selectedRows.has(item.id) ? 'bg-gray-100' : ''}>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                      <div className="flex items-center gap-2">
-                        <input
-                          type="checkbox"
-                          checked={selectedRows.has(item.id)}
-                          onChange={() => handleRowSelect(item.id)}
-                          className="h-4 w-4 text-blue-600 border-gray-300 rounded"
-                        />
-                        <button onClick={() => handleDelete(item.id)} className="text-red-500 hover:text-red-700">
-                          <FaTrash />
-                        </button>
-                      </div>
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{item.role}</td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{item.uploadDate}</td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-green-600 font-medium">
-                      {editingThresholds[item.id] ? (
-                        <input
-                          type="number"
-                          step="0.01"
-                          min="0"
-                          max="1"
-                          value={editableThresholds[item.id]?.selection || item.matchScore}
-                          onChange={(e) => handleThresholdChange(item.id, 'selection', e.target.value)}
-                          className="w-20 p-1 border border-gray-300 rounded"
-                        />
-                      ) : (
-                        item.matchScore
-                      )}
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-red-600 font-medium">
-                      {editingThresholds[item.id] ? (
-                        <input
-                          type="number"
-                          step="0.01"
-                          min="0"
-                          max="1"
-                          value={editableThresholds[item.id]?.rejection || item.relevanceScore}
-                          onChange={(e) => handleThresholdChange(item.id, 'rejection', e.target.value)}
-                          className="w-20 p-1 border border-gray-300 rounded"
-                        />
-                      ) : (
-                        item.relevanceScore
-                      )}
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm">
-                      <button
-                        onClick={() => handleDisplayClick(item)}
-                        className={`px-2 py-1 rounded ${activeDisplayId === item.id ? 'bg-red-500 text-white' : 'bg-blue-500 text-white'} hover:underline`}
-                      >
-                        {activeDisplayId === item.id ? 'Hide' : 'Modify'}
-                      </button>
-                    </td>
-                    <td className="px-[1px] py-4 text-sm text-gray-900">
-                      <button
-                        onClick={() => handleModifyClick(item)}
-                        className="text-blue-500 hover:underline"
-                      >
-                        {item.threshold}
-                      </button>
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap">
-                      <button 
-                        onClick={() => fetchJobDetails(item)} 
-                        className="text-blue-500 hover:text-blue-700 text-sm"
-                      >
-                        View Job Description
-                      </button>
-                    </td>
-                  </tr>
-                  
-                  {/* Expanded dashboard row - This is the crucial part */}
-                  {activeDisplayId === item.id && (
-                    <tr>
-                      <td colSpan="9" className="px-0 py-4">
-                        <div className="bg-white rounded-lg shadow-md p-4">
-                          <CS
-                            jdId={item.id}
-                            selectedFile={item.file}
-                            jdData={{
-                              apiResponse: {
-                                roles: item.fullData?.roles || [],
-                                skills_data: item.fullData?.skills_data || {},
-                                achievements: item.fullData?.achievements || {},
-                              }
-                            }}
-                            onClose={() => setActiveDisplayId(null)}
+              {paginatedList.map((item) => {
+                return (
+                  <React.Fragment key={`row-group-${item.id}`}>
+                    <tr key={`row-${item.id}`} className={selectedRows.has(item.id) ? 'bg-gray-100' : ''}>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                        <div className="flex items-center gap-2">
+                          <input
+                            type="checkbox"
+                            checked={selectedRows.has(item.id)}
+                            onChange={() => handleRowSelect(item.id)}
+                            className="h-4 w-4 text-blue-600 border-gray-300 rounded"
                           />
+                          <button onClick={() => handleDelete(item.id)} className="text-red-500 hover:text-red-700">
+                            <FaTrash />
+                          </button>
                         </div>
                       </td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{item.role}</td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{item.uploadDate}</td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-green-600 font-medium">
+                        {editingThresholds[item.id] ? (
+                          <input
+                            type="number"
+                            step="0.01"
+                            min="0"
+                            max="1"
+                            value={editableThresholds[item.id]?.selection || item.matchScore}
+                            onChange={(e) => handleThresholdChange(item.id, 'selection', e.target.value)}
+                            className="w-20 p-1 border border-gray-300 rounded"
+                          />
+                        ) : (
+                          item.matchScore
+                        )}
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-red-600 font-medium">
+                        {editingThresholds[item.id] ? (
+                          <input
+                            type="number"
+                            step="0.01"
+                            min="0"
+                            max="1"
+                            value={editableThresholds[item.id]?.rejection || item.relevanceScore}
+                            onChange={(e) => handleThresholdChange(item.id, 'rejection', e.target.value)}
+                            className="w-20 p-1 border border-gray-300 rounded"
+                          />
+                        ) : (
+                          item.relevanceScore
+                        )}
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm">
+                        <button
+                          onClick={() => handleDisplayClick(item.id)}
+                          className={`px-2 py-1 rounded ${expandedSection === item.id ? 'bg-red-500 text-white' : 'bg-blue-500 text-white'} hover:underline`}
+                        >
+                          {expandedSection === item.id ? 'Hide' : 'Modify'}
+                        </button>
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                        <button
+                          onClick={() => handleModifyClick(item)}
+                          className="text-blue-500 hover:underline"
+                        >
+                          {item.threshold}
+                        </button>
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap">
+                        <button 
+                          onClick={() => fetchJobDetails(item)} 
+                          className="text-blue-500 hover:text-blue-700 text-sm"
+                        >
+                          View Job Description
+                        </button>
+                      </td>
                     </tr>
-                  )}
-                </React.Fragment>
-              ))}
+                    
+                    {/* Expanded dashboard row - This is the crucial part */}
+                    {expandedSection === item.id && (
+                      <tr key={`expanded-${item.id}`}>
+                        <td colSpan="9" className="px-0 py-4">
+                          <div className="bg-white rounded-lg shadow-md p-4">
+                            <CS
+                              jdId={item.id}
+                              selectedFile={item.file}
+                              jdData={{
+                                apiResponse: {
+                                  roles: item.fullData?.roles || [],
+                                  skills_data: item.fullData?.skills_data || {},
+                                  achievements: item.fullData?.achievements || {},
+                                }
+                              }}
+                              onClose={() => setExpandedSection(null)}
+                            />
+                          </div>
+                        </td>
+                      </tr>
+                    )}
+                  </React.Fragment>
+                );
+              })}
             </tbody>
           </table>
         </div>
