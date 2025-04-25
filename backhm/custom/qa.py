@@ -3,7 +3,6 @@ import re
 import logging
 import traceback
 import google.generativeai as genai
-
 # Configure logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
