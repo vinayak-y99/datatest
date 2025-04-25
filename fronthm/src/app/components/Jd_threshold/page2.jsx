@@ -500,6 +500,7 @@ export default function Threshold({ jdData = {} }) {
                       sendRangeValue={handleSendRangeValue}
                       sendSelectedRoles={handleSelectedRoles}
                       onCreate={handleCreate}
+                      jobId={jdData?.jdId}
                     />
                   </div>
                 </div>

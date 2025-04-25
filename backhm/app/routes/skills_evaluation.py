@@ -434,6 +434,51 @@ class DashboardResponse(BaseModel):
 #         logger.error(f"Error generating with Gemini: {str(e)}")
 #         raise Exception(f"Error generating with Gemini: {str(e)}")
 # First Endpoint: Extract Job Description Information
+
+# Function to clean text of encoding artifacts and special characters
+def clean_text(text):
+    if not text or text == "Not specified":
+        return text
+        
+    # Handle special characters that appear as artifacts
+    replacements = {
+        "Ō": "ft",
+        "ƫ": "t",
+        "Ɵ": "ti",
+        "ƞ": "n",
+        "ŋ": "n",
+        "ƚ": "l",
+        "Ɔ": "O",
+        "ŕ": "r",
+        "ŝ": "s",
+        "Ŧ": "T",
+        "ũ": "u",
+        "Ŵ": "W",
+        "ŵ": "w",
+        "Ź": "Z",
+        "ź": "z",
+        "Ż": "Z",
+        "ż": "z",
+        "ƒ": "f",
+        "ƍ": "d",
+        "Ƌ": "D",
+        "ƌ": "d",
+        "Ɛ": "E",
+        "Ƒ": "F"
+    }
+    
+    # Replace each character
+    for old, new in replacements.items():
+        text = text.replace(old, new)
+    
+    # Remove other non-printable characters
+    text = re.sub(r'[^\x20-\x7E]', '', text)
+    
+    # Fix common issues
+    text = text.replace("  ", " ").strip()
+    
+    return text
+
 @analyze_job_description_router.post("/api/extract_job_description/", response_model=JobDescriptionResponse)
 async def extract_job_description(user_id: str, file: UploadFile = File(...), db: Session = Depends(get_db)):
     try:
@@ -443,84 +488,335 @@ async def extract_job_description(user_id: str, file: UploadFile = File(...), db
             raise HTTPException(status_code=404, detail="User not found")
         
         # Extract text from PDF
-        text = await process_pdf(file)
+        raw_text = await process_pdf(file)
         
-        # Initialize LLM service
-        llm_service = LLMService()
+        # Clean the raw text first
+        text = clean_text(raw_text)
         
-        # Create the job description extraction template
-        job_info_template = """Extract only the basic information from this job description:
-
-Basic Information:
-- Position Title: [Job Title]
-- Required Experience: [X years]
-- Location: [City, State/Country]
-- Contact: [Email and/or Phone if available]
-- Position Type: [Contract or Permanent]
-- Department: [Department name]
-- Office Timings: [Morning shift or Night shift]
-- Education Requirements: [Required education level]
-
-Primary Responsibilities: [Main job duties]
-
-Format your response with the following structure:
-Basic Information:
-- Position Title: [Job Title]
-- Required Experience: [X years]
-- Location: [City, State/Country]
-- Contact: [Email and/or Phone if available]
-- Position Type: [Contract or Permanent]
-- Department: [Department name]
-- Office Timings: [Morning shift or Night shift]
-- Education Requirements: [Required education level]
-
-Primary Responsibilities: [Main job duties]
-
-Rules:
-- You MUST extract the position title, required experience, and location if available
-- If exact years of experience aren't stated, estimate based on seniority level
-
-Job Description:
-{context}"""
+        # Add logging to help debug
+        logger.info(f"Processing PDF content with length: {len(text)}")
         
-        # Format the template with the appropriate values
-        prompt = job_info_template.format(context=text)
+        # Set default values for all fields
+        position_title = "Not specified"
+        required_experience = "Not specified"
+        location = "Not specified"
+        contact = "Not specified"
+        position_type = "Not specified"
+        department = "Not specified"
+        office_timings = "Not specified"
+        education = "Not specified"
+        responsibilities = "Not specified"
         
-        # Call LLM with our custom prompt
-        extraction_result = await llm_service.generate_with_gemini(prompt)
+        # Try to extract position title with simplified logic
+        title_patterns = [
+            r"(?:^|\n)(?:Human Resources|HR)\s+(?:Manager|Director|Specialist|Coordinator|Assistant)",
+            r"(?:^|\n)([A-Z][A-Za-z]+(?:\s+[A-Z][A-Za-z]+){0,3})\s+(?:Manager|Director|Lead|Specialist)",
+            r"(?:^|\n)(?:Senior|Junior)?\s*([A-Za-z]+(?:\s+[A-Za-z]+){0,3})\s+(?:Manager|Director|Engineer|Developer|Specialist|Consultant)",
+            r"(?:Position|Job|Role|Title)\s*(?::|is|:)\s*([^\n\.,]{3,50})",
+            r"(?:^|\n)([A-Z][A-Za-z]+(?:\s+[A-Za-z]+){0,6})\s*(?:Job|Position|Role)\s+(?:description|Description|brief)",
+            r"(?:^|\n)(.{3,50})\s+Job\s+description",
+            r"(?:^|\n)([A-Z][A-Za-z]+(?:\s+[A-Za-z]+){0,6})(?=\s+description|\s+brief)"
+        ]
         
-        # Parse the extraction results
-        basic_info, responsibilities = await parse_job_info(extraction_result)
+        for pattern in title_patterns:
+            try:
+                match = re.search(pattern, text, re.IGNORECASE)
+                if match:
+                    # Try to get group 1 if it exists, otherwise use group 0
+                    extracted_title = match.group(1) if match.groups() else match.group(0)
+                    extracted_title = extracted_title.strip()
+                    
+                    # Clean up the title and limit length
+                    # Remove any trailing indicators like colons
+                    extracted_title = re.sub(r'[:;]+$', '', extracted_title)
+                    
+                    # Split by any obvious separators
+                    if ' - ' in extracted_title:
+                        parts = extracted_title.split(' - ')
+                        extracted_title = parts[0].strip()
+                    
+                    # Limit to first 7 words at most
+                    title_words = extracted_title.split()
+                    if len(title_words) > 7:
+                        extracted_title = ' '.join(title_words[:7])
+                    
+                    # Reject if too long or contains suspicious strings
+                    if (len(extracted_title) <= 50 and 
+                        len(extracted_title.split()) <= 7 and
+                        not any(x in extracted_title.lower() for x in ["responsibility", "requirement", "description", "objective", "overview", "summary", "company", "location", "experience", "ctc", "lacs"])):
+                        position_title = extracted_title
+                        break
+            except Exception as e:
+                logger.error(f"Error in title extraction: {str(e)}")
+                continue
         
-        # Extract job details from basic_info
-        position_title = basic_info.get("Position Title", "Not specified")
-        required_experience = basic_info.get("Required Experience", "Not specified")
-        location = basic_info.get("Location", "Not specified")
-        position_type = basic_info.get("Position Type", "Not specified")
-        office_timings = basic_info.get("Office Timings", "Not specified")
-        department = basic_info.get("Department", "Not specified")
-        education = basic_info.get("Education Requirements", "Not specified")
-        contact = basic_info.get("Contact", "Not specified")
+        # Special case handling for "Human Resources (HR) Manager" pattern
+        hr_manager_match = re.search(r"(?:Human Resources|HR)(?:\s+\([A-Z]+\))?\s+Manager", text)
+        if hr_manager_match and position_title == "Not specified":
+            position_title = hr_manager_match.group(0).strip()
+        
+        # Special extract from beginning of document - first line is often the title
+        if position_title == "Not specified":
+            first_line = text.strip().split('\n')[0]
+            if 3 < len(first_line) < 50 and not any(x in first_line.lower() for x in ["description", "overview", "company", "introduction"]):
+                # Limit to first 5 words if it's potentially a title
+                first_line_words = first_line.split()
+                if len(first_line_words) > 5:
+                    first_line = ' '.join(first_line_words[:5])
+                position_title = first_line.strip()
+        
+        # Extract experience - simplified
+        experience_patterns = [
+            r"(?:Experience|Work Experience)[\s:]+(\d+[\-+]?\s*(?:years|yrs))",
+            r"(\d+[\-+]?\s*(?:years|yrs)[\s\w]*experience)",
+            r"((?:Junior|Mid|Senior|Principal)[\s\w]*level)"
+        ]
+        
+        for pattern in experience_patterns:
+            try:
+                match = re.search(pattern, text, re.IGNORECASE)
+                if match:
+                    required_experience = match.group(1).strip()
+                    break
+            except Exception as e:
+                logger.error(f"Error in experience extraction: {str(e)}")
+                continue
+        
+        # Extract location - simplified
+        location_patterns = [
+            r"(?:Location|Place|Site)[\s:]+([^\n]+)",
+            r"(?:Remote|On-site|Hybrid)"
+        ]
+        
+        for pattern in location_patterns:
+            try:
+                match = re.search(pattern, text, re.IGNORECASE)
+                if match:
+                    if match.groups():
+                        location = match.group(1).strip()
+                    else:
+                        location = match.group(0).strip()
+                    break
+            except Exception as e:
+                logger.error(f"Error in location extraction: {str(e)}")
+                continue
+        
+        # Extract department with improved precision
+        department_patterns = [
+            r"(?:Department|Division|Team|Unit|Group)[:\s]+([^,\n]{3,50}?)(?:$|\n|,|\.|Employment|\()",
+            r"(?:^|\n)Department[:\s]*([^,\n]{3,50})",
+            r"(?:^|\n)Division[:\s]*([^,\n]{3,50})",
+            r"(?:^|\n|-)(?:Engineering|IT|HR|Marketing|Sales|Finance|Accounting|Operations|Product|Legal|R&D|Customer Service)(?:\s+-\s+[^,\n]{3,30})?",
+            r"Department:?\s*(?:Engineering|IT|HR|Marketing|Sales|Finance|Accounting|Operations|Product|Legal|R&D)(?:\s+-\s+[^,\n]{3,30})?"
+        ]
+        
+        department = "Not specified"
+        for pattern in department_patterns:
+            try:
+                match = re.search(pattern, text, re.IGNORECASE)
+                if match:
+                    if match.groups():
+                        extracted_dept = match.group(1).strip()
+                    else:
+                        extracted_dept = match.group(0).strip()
+                    
+                    # Clean up extracted department
+                    # Remove prefixes like "Department:" if they're still in the extraction
+                    extracted_dept = re.sub(r'^(?:Department|Division|Team|Unit|Group)[:\s]+', '', extracted_dept, flags=re.IGNORECASE)
+                    
+                    # Limit to 50 characters and 4 words max
+                    dept_words = extracted_dept.split()
+                    if len(dept_words) > 4:
+                        extracted_dept = ' '.join(dept_words[:4])
+                    
+                    if len(extracted_dept) > 50:
+                        extracted_dept = extracted_dept[:50].strip()
+                    
+                    # Avoid capturing everything after the department label
+                    if len(extracted_dept) < 50 and all(x not in extracted_dept.lower() for x in ['employment type', 'role category', 'education', 'key skills']):
+                        department = extracted_dept
+                        break
+            except Exception as e:
+                logger.error(f"Error in department extraction: {str(e)}")
+                continue
+        
+        # Handle specific case of "Engineering - Software & QA" format
+        eng_match = re.search(r"Engineering\s*-\s*(?:Software|Hardware|QA|Testing|Development|Design|Systems|Network)", text, re.IGNORECASE)
+        if eng_match and (department == "Not specified" or len(department) > len(eng_match.group(0))):
+            department = eng_match.group(0).strip()
+            
+        # Try to find role category if department not found
+        if department == "Not specified":
+            role_match = re.search(r"Role\s+Category:?\s*([^,\n]{3,30})", text, re.IGNORECASE)
+            if role_match:
+                department = role_match.group(1).strip()
+        
+        # Extract education requirements with improved precision
+        education_patterns = [
+            # Specific degree patterns
+            r"(?:Education|Qualification|Degree)(?:\s+Required)?[:\s]+([^\n]+)",
+            r"(?:Bachelor'?s|Master'?s|PhD|Doctorate|Graduate|Postgraduate|B\.Tech|B\.E|M\.Tech|M\.E|M\.Sc|B\.Sc|MCA)\s+(?:degree|in)\s+([^\.]+)",
+            r"(?:^|\n)(?:Education|Qualification)(?:\s+Required)?[:\s]+(.+?)(?:$|\n|Key\s+Skills)",
+            r"Educat(?:ion|ional) (?:Requirement|Qualification)[s]?:?\s*([^\n]+)",
+            # Specific formats from examples
+            r"Education UG:\s*([^,\n]+),?\s*PG:\s*([^,\n]+)",
+            r"(?:UG|Undergraduate)[:;]?\s*([^,\n]+),?\s*(?:PG|Postgraduate)[:;]?\s*([^,\n]+)",
+            r"(?:Any Graduate|B\.Tech|B\.E|B\.Sc|BCA)(?:\s+in\s+[^,]+)?(?:\s*,\s*|\s+and\s+)(?:Any Postgraduate|M\.Tech|M\.E|M\.Sc|MCA)",
+            r"(?:^|\n)Qualification[s]?:?\s*(.+?)(?=$|\n|Experience|Requirements)"
+        ]
+        
+        education = "Not specified"
+        for pattern in education_patterns:
+            try:
+                match = re.search(pattern, text, re.IGNORECASE)
+                if match:
+                    if len(match.groups()) >= 2:  # If we have UG and PG captured separately
+                        ug = match.group(1).strip()
+                        pg = match.group(2).strip() if match.group(2) else ""
+                        if pg:
+                            education = f"{ug}, {pg}"
+                        else:
+                            education = ug
+                    else:
+                        education = match.group(1).strip()
+                    break
+            except Exception as e:
+                logger.error(f"Error in education extraction: {str(e)}")
+                continue
+        
+        # Look for specific degree mentions if not found yet
+        if education == "Not specified":
+            # Try to find any mentioned degrees in the text
+            degree_match = re.search(r"(Bachelor'?s|Master'?s|Graduate|Postgraduate|B\.Tech|B\.E|M\.Tech|M\.E|M\.Sc|B\.Sc|MCA)(?:\s+(?:degree|in)\s+([^\.]+))?", text, re.IGNORECASE)
+            if degree_match:
+                degree = degree_match.group(1).strip()
+                if len(degree_match.groups()) > 1 and degree_match.group(2):
+                    field = degree_match.group(2).strip()
+                    education = f"{degree} in {field}"
+                else:
+                    education = degree
+        
+        # Try to find standard formats like "Any Graduate, Any Postgraduate"
+        if education == "Not specified":
+            edu_formats = [
+                r"(?:Any Graduate|Graduate|B\.Tech|B\.E|B\.Sc|BCA)(?:\s*,\s*|\s+and\s+)(?:Any Postgraduate|Postgraduate|M\.Tech|M\.E|M\.Sc|MCA)",
+                r"(?:Any|UG|PG) (?:Graduate|Postgraduate)",
+                r"(?:Bachelor|Master)(?:'s|\s) degree"
+            ]
+            for pattern in edu_formats:
+                match = re.search(pattern, text, re.IGNORECASE)
+                if match:
+                    education = match.group(0)
+                    break
+                    
+        # Clean up the extracted text
+        if education != "Not specified":
+            # Trim to reasonable length and remove extra whitespace
+            education = re.sub(r'\s+', ' ', education)
+            
+            # Remove any unwanted prefixes
+            education = re.sub(r'^(?:Education|Qualification|Degree)[:\s]+', '', education, flags=re.IGNORECASE)
+            
+            # Standardize some formats
+            education = re.sub(r'(?:Any|an)\s+(?:Graduate|UG)', 'Any Graduate', education, flags=re.IGNORECASE)
+            education = re.sub(r'(?:Any|a)\s+(?:Postgraduate|PG)', 'Any Postgraduate', education, flags=re.IGNORECASE)
+            
+            # Format properly for UG/PG format
+            if re.search(r'UG:.*PG:', education, re.IGNORECASE):
+                education = re.sub(r'UG:\s*', '', education, flags=re.IGNORECASE)
+                education = re.sub(r'PG:\s*', 'Any Postgraduate', education, flags=re.IGNORECASE)
+            
+            # Limit length
+            if len(education) > 100:
+                education = education[:100].strip()
                 
+        # Handle specific text patterns (from the example)
+        master_degree_match = re.search(r"Master(?:'?s)?\s+degree\s+in\s+([^\.]+)", text, re.IGNORECASE)
+        if master_degree_match:
+            field = master_degree_match.group(1).strip()
+            if len(field) < 50:  # Reasonable field name length
+                education = f"Master's degree in {field}"
+        
+        # Simple extractions for remaining fields
         try:
-            # Create JobDescription entry - Set required_skills to NULL
+            contact_match = re.search(r"(?:Contact|Email|Phone)[\s:]+([^\n]+)", text, re.IGNORECASE)
+            if contact_match:
+                contact = contact_match.group(1).strip()
+                
+            position_match = re.search(r"(?:Position Type|Job Type)[\s:]+([^\n]+)", text, re.IGNORECASE)
+            if position_match:
+                position_type = position_match.group(1).strip()
+            
+            timing_match = re.search(r"(?:Office Hours|Working Hours|Shift)[\s:]+([^\n]+)", text, re.IGNORECASE)
+            if timing_match:
+                office_timings = timing_match.group(1).strip()
+            
+            # Extract responsibilities with simple pattern
+            resp_match = re.search(r"(?:Responsibilities|Duties)[\s:]+(.+?)(?:Requirements|Qualifications|Skills|$)", text, re.IGNORECASE | re.DOTALL)
+            if resp_match:
+                responsibilities = resp_match.group(1).strip()
+                # Quick cleanup
+                responsibilities = re.sub(r'[•\*\-]', '', responsibilities)
+                responsibilities = re.sub(r'\s{2,}', ' ', responsibilities)
+            
+        except Exception as e:
+            logger.error(f"Error in field extraction: {str(e)}")
+            # Continue with defaults if extraction fails
+        
+        # Fall back to the first 200 chars of text for responsibilities if not found
+        if responsibilities == "Not specified":
+            responsibilities = text[:min(200, len(text))] + "..."
+            
+        logger.info(f"Extracted title: {position_title}")
+            
+        # Clean all extracted fields before saving to database
+        position_title = clean_text(position_title)
+        required_experience = clean_text(required_experience)
+        location = clean_text(location)
+        contact = clean_text(contact)
+        position_type = clean_text(position_type)
+        department = clean_text(department)
+        office_timings = clean_text(office_timings)
+        education = clean_text(education)
+        responsibilities = clean_text(responsibilities)
+        
+        # Keep original raw_text for reference
+        raw_text = text
+        
+        try:
+            # Create JobDescription entry
             job_description = JobDescription(
                 title=position_title,
                 description=responsibilities,
-                raw_text=text,
-                keywords="",  # Will be populated in the second endpoint
+                raw_text=raw_text,  # Store original text
+                keywords="",
                 status="Active",
                 department=department,
-                required_skills="",  # Set to NULL initially
+                required_skills="",
                 experience_level=required_experience,
                 education_requirements=education,
-                threshold_score=70  # Default threshold score
+                threshold_score=70
             )
             db.add(job_description)
             db.commit()
             db.refresh(job_description)
                 
-            # Associate the job with the user who created it
+            # Create ThresholdScore entry
+            threshold_score = ThresholdScore(
+                user_id=user_id,
+                job_id=job_description.job_id,
+                selection_score=70,
+                rejection_score=30, 
+                threshold_value=50,
+                threshold_result={},
+                threshold_prompts="",
+                custom_prompts="",
+                sample_prompts_history=""
+            )
+            db.add(threshold_score)
+            db.commit()
+            
+            # Associate job with user
             job_recruiter_assignment = JobRecruiterAssignment(
                 job_id=job_description.job_id,
                 user_id=user.user_id,
@@ -533,7 +829,7 @@ Job Description:
                 job_id=job_description.job_id,
                 title=position_title,
                 description=responsibilities,
-                raw_text=text,
+                raw_text=raw_text,
                 status="success",
                 basic_info={
                     "position_title": position_title,
@@ -550,15 +846,13 @@ Job Description:
             db.rollback()
             logger.error(f"Database error: {str(db_error)}")
             raise HTTPException(status_code=500, detail=f"Database error: {str(db_error)}")
-        finally:
-            db.close()
     except Exception as e:
         logger.error(f"Extraction error: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
 
-# Second Endpoint: Create Dashboards
-@analyze_job_description_router.post("/api/create_dashboards/", response_model=DashboardResponse)
-async def create_dashboards(job_id: int, num_dashboards: int = Query(ge=1, le=10), db: Session = Depends(get_db)):
+# Second Endpoint: Update Dashboards
+@analyze_job_description_router.put("/api/update_dashboards/", response_model=DashboardResponse)
+async def update_dashboards(job_id: int, num_dashboards: int = Query(ge=1, le=10), db: Session = Depends(get_db)):
     try:
         # Retrieve job description from database
         job_description = db.query(JobDescription).filter(JobDescription.job_id == job_id).first()
@@ -604,6 +898,7 @@ if {num_dashboards} = 1:
 Then only output Dashboard #1 - Required Skills:
 - [Skill Name]: Importance: [X]% Rating: [R]/10
 - [Next Skill]: Importance: [X]% Rating: [R]/10
+
 if {num_dashboards} = 2 :
 Dashboard #1 - Required Skills:
 - [Skill Name]: Importance: [X]% Rating: [R]/10
@@ -634,7 +929,7 @@ Rejection Threshold: 30%
 
 Rules:
 - Each dashboard category MUST be different and distinct
-- if {num_dashboards} = 1, then only output Dashboard #1 - Required Skills, if {num_dashboards} = 2, then only output Dashboard #1 - Required Skills and Dashboard #2 - [Category Name]
+- if {num_dashboards} = 1, then only output Dashboard #1 - Required Skills, if {num_dashboards} = 2, then output Dashboard #1 - Required Skills and Dashboard #2 - [Category Name] and if {num_dashboards} = 3 or more, then output Dashboard #1 - Required Skills and Dashboard #2 - [Category Name] and Dashboard #3 - [Category Name] and so on.
 - Each dashboard MUST have at least 3 items
 - Numbers should be rounded to one decimal place
 - If information for a requested dashboard is not available in the job description, create a relevant category that would be useful for this job position
@@ -688,19 +983,30 @@ Job Description:
             job_description.keywords = ", ".join(selected_prompts) if selected_prompts else ""
             job_description.threshold_score = selection_threshold
             
-            # Create ThresholdScore entry
-            threshold_score = ThresholdScore(
-                user_id=user_id,
-                job_id=job_id,
-                selection_score=selection_threshold,
-                rejection_score=rejection_threshold, 
-                threshold_value=(selection_threshold + rejection_threshold) / 2,
-                threshold_result=response_dict,
-                threshold_prompts=selected_prompts_str,
-                custom_prompts="",
-                sample_prompts_history=""
-            )
-            db.add(threshold_score)
+            # Find existing ThresholdScore entry to update
+            existing_threshold = db.query(ThresholdScore).filter(ThresholdScore.job_id == job_id).first()
+            
+            if existing_threshold:
+                # Update existing threshold score entry
+                existing_threshold.selection_score = selection_threshold
+                existing_threshold.rejection_score = rejection_threshold
+                existing_threshold.threshold_value = (selection_threshold + rejection_threshold) / 2
+                existing_threshold.threshold_result = response_dict
+                existing_threshold.threshold_prompts = selected_prompts_str
+            else:
+                # If no threshold record exists (unlikely), create one
+                threshold_score = ThresholdScore(
+                    user_id=user_id,
+                    job_id=job_id,
+                    selection_score=selection_threshold,
+                    rejection_score=rejection_threshold, 
+                    threshold_value=(selection_threshold + rejection_threshold) / 2,
+                    threshold_result=response_dict,
+                    threshold_prompts=selected_prompts_str,
+                    custom_prompts="",
+                    sample_prompts_history=""
+                )
+                db.add(threshold_score)
             
             db.commit()
             
@@ -721,7 +1027,7 @@ Job Description:
         finally:
             db.close()
     except Exception as e:
-        logger.error(f"Dashboard creation error: {str(e)}")
+        logger.error(f"Dashboard update error: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
 
 # Helper function to parse job basic information

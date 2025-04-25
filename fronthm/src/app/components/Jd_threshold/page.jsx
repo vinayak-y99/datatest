@@ -39,10 +39,12 @@ const Resume = ({ onMinimize }) => (
   </div>
 );
 
-export default function Threshold({ jdData = {} }) {
-  // Debug the incoming jdData
-  console.log('Threshold component received jdData:', jdData);
+export default function Threshold({ jdData = {}, jobId, jdId }) {
+  // Debug all incoming props
+  console.log('Threshold component props - jdData:', jdData);
+  console.log('Threshold component props - jobId:', jobId, 'jdId:', jdId);
   console.log('Sample prompts received in Threshold:', jdData?.apiResponse?.selected_prompts);
+  console.log('jobId from jdData:', jdData?.jobId);
 
   const [roles, setRoles] = useState(() => {
     const rolesData = jdData?.apiResponse?.roles;
@@ -452,6 +454,7 @@ export default function Threshold({ jdData = {} }) {
                       sendRangeValue={handleSendRangeValue}
                       sendSelectedRoles={handleSelectedRoles}
                       onCreate={handleCreate}
+                      jobId={jobId || jdData?.jobId}
                     />
                   </div>
                 </div>

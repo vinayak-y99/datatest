@@ -21,6 +21,11 @@ const Sidebar = ({
     const [availableDashboards, setAvailableDashboards] = useState([]);
     const [selectedDashboards, setSelectedDashboards] = useState([]);
 
+    // Debug jobId prop
+    useEffect(() => {
+        console.log("Sidebar received jobId:", jobId, "typeof jobId:", typeof jobId);
+    }, [jobId]);
+
     // Extract available dashboard categories from skills_data
     useEffect(() => {
         if (skills_data && Object.keys(skills_data).length > 0) {
@@ -283,19 +288,32 @@ const Sidebar = ({
                 sendRangeValue(dashboardCount);
 
                 // Use the jobId provided as prop instead of trying to extract from URL
-                // Default to a valid number if not provided - FastAPI expects a number
-                const currentJobId = jobId && !isNaN(parseInt(jobId)) ? parseInt(jobId) : 1;
-                console.log("Using job_id:", currentJobId);
+                console.log("jobId in handleCreate:", jobId, "typeof:", typeof jobId);
+                
+                // Get a valid numeric job ID, with good fallbacks
+                let currentJobId = 1; // Default fallback
+                
+                if (jobId !== undefined && jobId !== null) {
+                  if (typeof jobId === 'number') {
+                    currentJobId = jobId;
+                  } else if (typeof jobId === 'string' && jobId.trim() !== '') {
+                    // Try to parse as integer if it's a string
+                    const parsed = parseInt(jobId);
+                    if (!isNaN(parsed)) {
+                      currentJobId = parsed;
+                    }
+                  }
+                }
+                
+                console.log("Final currentJobId value:", currentJobId, "type:", typeof currentJobId);
                 
                 // Call the create_dashboards endpoint with the job_id and dashboard count
-                const response = await fetch(`http://127.0.0.1:8000/api/create_dashboards/?job_id=${currentJobId}&num_dashboards=${dashboardCount}`, {
-                    method: 'POST',
+                const response = await fetch(`http://127.0.0.1:8000/api/update_dashboards/?job_id=${currentJobId}&num_dashboards=${dashboardCount}`, {
+                    method: 'PUT',
                     headers: {
                         'Content-Type': 'application/json',
-                    },
-                    body: JSON.stringify({
-                        num_dashboards: dashboardCount
-                    }),
+                        'Accept': 'application/json'
+                    }
                 });
                 
                 console.log("Response status:", response.status);
