@@ -64,24 +64,79 @@ const JobDetailsCard = ({ jobDetails, loading, onClose, isCreating = false, newJ
   
   // Handle the create job mode
   if (isCreating && newJobData) {
-    const handleSubmit = () => {
-      // Format the data according to the API expectations
-      const formattedData = {
-        position_title: newJobData.position_title,
-        required_experience: newJobData.required_experience,
-        location: newJobData.location || '',
-        position_type: newJobData.position_type || '',
-        office_timings: newJobData.office_timings || '',
-        description: newJobData.content || '',
-        // Convert skills data to arrays for the API
-        requirements: Object.keys(newJobData.skills_data[newJobData.roles[0] || 'default']?.requirements || {}),
-        responsibilities: [],
-        qualifications: Object.keys(newJobData.skills_data[newJobData.roles[0] || 'default']?.qualifications || {}),
-        skills: Object.keys(newJobData.skills_data[newJobData.roles[0] || 'default']?.skills || {})
-      };
-      console.log('Formatted Data:', formattedData);
-      // Call the submit handler with properly formatted data
-      onSubmit(formattedData);
+    const handleSubmit = async () => {
+      try {
+        // Format the data according to the API expectations, matching extract_job_description's format
+        const formattedData = {
+          user_id: '1', // Assuming a default user_id or this should be passed in as a prop
+          title: newJobData.position_title,
+          description: newJobData.content, // This will be saved as the description
+          raw_text: newJobData.content, // Important: Save the content as raw_text too
+          keywords: '', // Can be populated later
+          status: 'Active',
+          department: newJobData.roles?.[0] || '',
+          required_skills: '', // Will be updated through dashboards later
+          experience_level: newJobData.required_experience || '',
+          education_requirements: newJobData.skills_data?.[newJobData.roles?.[0] || 'default']?.qualifications ? 
+                                Object.keys(newJobData.skills_data[newJobData.roles[0] || 'default'].qualifications).join(', ') : 
+                                '',
+          threshold_score: 70, // Default threshold score
+          location: newJobData.location || '',
+          position_type: newJobData.position_type || '',
+          office_timings: newJobData.office_timings || ''
+        };
+        
+        console.log('Formatted Data for DB Save:', formattedData);
+        
+        // Call the API to create the job description
+        const response = await fetch('http://127.0.0.1:8000/api/create-job-description', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify(formattedData)
+        });
+        
+        if (!response.ok) {
+          throw new Error(`Error: ${response.status}`);
+        }
+        
+        const result = await response.json();
+        console.log('Job created successfully:', result);
+        
+        // Create a job entry object that matches the expected format in the JD list
+        const newJobEntry = {
+          id: result.job_id,
+          job_id: result.job_id,
+          role: newJobData.position_title,
+          skills: newJobData.skills_data,
+          fileName: `Job - ${newJobData.position_title}`,
+          uploadDate: new Date().toLocaleDateString(),
+          status: 'Success',
+          threshold: 'View',
+          matchScore: '0.75',
+          relevanceScore: '0.25',
+          fullData: {
+            position_title: newJobData.position_title,
+            required_experience: newJobData.required_experience,
+            location: newJobData.location || '',
+            position_type: newJobData.position_type || '',
+            office_timings: newJobData.office_timings || '',
+            content: newJobData.content,
+            selection_threshold: 0.75,
+            rejection_threshold: 0.25
+          }
+        };
+        
+        // Call onSubmit with the new job entry, no need for additional API calls
+        onSubmit(newJobEntry);
+        
+        // Close the modal
+        onClose();
+      } catch (error) {
+        console.error('Error creating job description:', error);
+        alert('Failed to create job description. Please try again.');
+      }
     };
 
     // Generate preview data object that matches the structure expected by the display part

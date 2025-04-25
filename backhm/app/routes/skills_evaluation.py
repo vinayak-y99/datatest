@@ -1,4 +1,4 @@
-from fastapi import FastAPI, HTTPException, Depends, UploadFile, File
+from fastapi import FastAPI, HTTPException, Depends, UploadFile, File, Query, Form, BackgroundTasks
 from sqlalchemy.orm import Session
 from sqlalchemy import create_engine
 from sqlalchemy.ext.declarative import declarative_base
@@ -14,9 +14,19 @@ from app.services.dashboard_service import DashboardService
 from app.services.llm_service import LLMService
 from fastapi import APIRouter, FastAPI, HTTPException, Depends, File, UploadFile, Query
 from io import BytesIO
-from app.models.base import JobDescription, JobRequiredSkills, Skill, ThresholdScore, User, JobRecruiterAssignment
+from app.models.base import JobDescription, JobRequiredSkills, Skill, ThresholdScore, User, JobRecruiterAssignment, Candidate, Interview, Discussion
 import app.database.connection as get_db
 import re
+import openai
+import io
+import PyPDF2
+import docx
+import time
+import traceback
+import random
+import asyncio
+from app.core.Config import settings
+
 # Database connection
 SQLALCHEMY_DATABASE_URL = f"postgresql://postgres:Temp1234@localhost:5432/fasthire999" # Change as needed
 
@@ -1125,28 +1135,6 @@ async def parse_dashboards(dashboard_result):
     skills_data["categories"] = categories
 
     return skills_data, dashboard_result, (selection_threshold, rejection_threshold), selected_prompts
-
-# Define response models
-class JobDescriptionResponse(BaseModel):
-    job_id: int
-    title: str
-    description: str
-    raw_text: str
-    status: str
-    basic_info: Dict[str, str]
-
-class DashboardResponse(BaseModel):
-    job_id: int
-    roles: List[str]
-    skills_data: Dict[str, Any]
-    formatted_data: Dict[str, Any]
-    status: str
-    raw_response: str
-    selected_prompts: str
-    data: Dict[str, Any]
-    # Optional fields for backward compatibility
-    selection_threshold: Optional[int] = 0
-    rejection_threshold: Optional[int] = 0
 # Get individual JobDescription
 @analyze_job_description_router.get("/api/job-description/{job_id}", response_model=Dict[str, Any])
 async def get_job_description(job_id: int, db: Session = Depends(get_db)):
@@ -1208,8 +1196,75 @@ async def get_job_description(job_id: int, db: Session = Depends(get_db)):
         
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error retrieving job description: {str(e)}")
-  
-# fetch data to dashboard    
+
+@analyze_job_description_router.delete("/api/delete-job/{job_id}")
+async def delete_job(job_id: int, db: Session = Depends(get_db)):
+    try:
+        # Check if the job exists first
+        job = db.query(JobDescription).filter(JobDescription.job_id == job_id).first()
+        if not job:
+            raise HTTPException(status_code=404, detail="Job description not found")
+
+        # Delete records in proper order to handle foreign key constraints
+        
+        # Check for related Interviews
+        interviews = db.query(Interview).filter(Interview.job_id == job_id).all()
+        if interviews:
+            db.query(Interview).filter(Interview.job_id == job_id).delete()
+            logger.info(f"Deleted {len(interviews)} interviews related to job ID {job_id}")
+            
+        # Check for related Discussions
+        discussions = db.query(Discussion).filter(Discussion.job_id == job_id).all()
+        if discussions:
+            db.query(Discussion).filter(Discussion.job_id == job_id).delete()
+            logger.info(f"Deleted {len(discussions)} discussions related to job ID {job_id}")
+        
+        # Check for Candidates
+        candidates = db.query(Candidate).filter(Candidate.job_id == job_id).all()
+        if candidates:
+            # You may need to handle cascading deletes for candidates if they have related records
+            # For now, just log a warning and don't delete candidates to avoid potential data loss
+            logger.warning(f"Found {len(candidates)} candidates related to job ID {job_id}. "
+                          f"Consider reassigning these candidates to another job.")
+            
+            # Uncomment the line below to delete candidates if that's desired behavior
+            # db.query(Candidate).filter(Candidate.job_id == job_id).delete()
+        
+        # 1. Delete JobRequiredSkills entries
+        job_skills = db.query(JobRequiredSkills).filter(JobRequiredSkills.job_id == job_id).all()
+        if job_skills:
+            db.query(JobRequiredSkills).filter(JobRequiredSkills.job_id == job_id).delete()
+            logger.info(f"Deleted {len(job_skills)} required skills related to job ID {job_id}")
+        
+        # 2. Delete JobRecruiterAssignment (if exists)
+        recruiter_assignment = db.query(JobRecruiterAssignment).filter(JobRecruiterAssignment.job_id == job_id).first()
+        if recruiter_assignment:
+            db.query(JobRecruiterAssignment).filter(JobRecruiterAssignment.job_id == job_id).delete()
+            logger.info(f"Deleted recruiter assignment for job ID {job_id}")
+        
+        # 3. Delete ThresholdScore entries
+        threshold_scores = db.query(ThresholdScore).filter(ThresholdScore.job_id == job_id).all()
+        if threshold_scores:
+            db.query(ThresholdScore).filter(ThresholdScore.job_id == job_id).delete()
+            logger.info(f"Deleted {len(threshold_scores)} threshold scores related to job ID {job_id}")
+        
+        # 4. Finally delete the JobDescription
+        db.query(JobDescription).filter(JobDescription.job_id == job_id).delete()
+        logger.info(f"Deleted job description with ID {job_id}")
+        
+        # Commit all deletions
+        db.commit()
+        
+        return {"status": "success", "message": f"Job ID {job_id} and all related data have been deleted successfully"}
+        
+    except HTTPException as http_exc:
+        db.rollback()
+        raise http_exc
+    except Exception as e:
+        db.rollback()
+        logger.error(f"Error deleting job: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Error deleting job: {str(e)}")
+
 @analyze_job_description_router.get("/api/job_analyses/", response_model=List[JobAnalysisResponse])
 async def get_all_job_analyses(db: Session = Depends(get_db)):
     try: 
