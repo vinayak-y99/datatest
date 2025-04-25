@@ -23,7 +23,7 @@ Basic Information:
 - Education Requirements: [Required education level]
 
 For Dashboard #1 (Required Skills):
-Extract key technical skills with their importance (%), selection score (%), rejection score (%), and rating (out of 10).
+Extract key technical skills
 
 For the remaining {remaining_dashboards} dashboards, extract different categories of job requirements. These could include but are not limited to:
 - Technical qualifications
@@ -40,13 +40,6 @@ For the remaining {remaining_dashboards} dashboards, extract different categorie
 For EACH dashboard category, provide:
 - Category name (e.g., "Technical Skills", "Soft Skills", "Certifications")
 - 3-7 items within that category
-- For each item: Name, Importance (%), Selection Score (%), Rejection Score (%), Rating (out of 10)
-
-Importance Score (Sum: 100% per category): Represents the relative priority of each item based on prominence in the job description.
-Selection Score (Sum: 100% across all items): Indicates how much each item contributes to candidate selection.
-Rejection Score (Sum: 100% across all items): Indicates how much lacking each item would impact candidate's rejection.
-Rating: Score out of 10 calculated as (Importance × 10 ÷ highest importance percentage in that category)
-
 Format your response with CONSISTENT structure as follows with one blank line between each section:
 
 Basic Information:
@@ -62,36 +55,23 @@ Basic Information:
 Primary Responsibilities: [Main job duties]
 
 Dashboard #1 - Required Skills:
-- [Skill Name]: Importance: [X]% Selection Score: [Y]% Rejection Score: [Z]% Rating: [R]/10
-- [Next Skill]: Importance: [X]% Selection Score: [Y]% Rejection Score: [Z]% Rating: [R]/10
+- [Item Name]: 
+- [Next Item]: 
 
 Dashboard #2 - [Category Name]:
-- [Item Name]: Importance: [X]% Selection Score: [Y]% Rejection Score: [Z]% Rating: [R]/10
-- [Next Item]: Importance: [X]% Selection Score: [Y]% Rejection Score: [Z]% Rating: [R]/10
+- [Item Name]: 
+- [Next Item]: 
 
 Dashboard #3 - [Category Name]:
-- [Item Name]: Importance: [X]% Selection Score: [Y]% Rejection Score: [Z]% Rating: [R]/10
-- [Next Item]: Importance: [X]% Selection Score: [Y]% Rejection Score: [Z]% Rating: [R]/10
+- [Item Name]: 
+- [Next Item]: 
 
 (Continue for all {num_dashboards} dashboards)
-
-Threshold Recommendations:
-- Job Match Benchmark: [X]%
-- High Score Threshold: [X]%
-- High Match Threshold: [X]%
-- Mid Score Threshold: [X]%
-- Mid Match Threshold: [X]%
-- Critical Skill Importance: [X]%
-- Experience Score Multiplier: [X.X]
-- Overall Threshold Value: [X]%
-- Selection Threshold: [X]%
-- Rejection Threshold: [X]%
 
 Rules:
 - You MUST extract the position title, required experience, and location if available
 - If exact years of experience aren't stated, estimate based on seniority level
 - Importance percentages should sum to 100% within each category
-- Selection and Rejection scores should each sum to 100% across all items
 - Each dashboard category MUST be different and distinct
 - Each dashboard MUST have at least 3 items
 - Numbers should be rounded to one decimal place

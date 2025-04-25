@@ -20,7 +20,7 @@ Basic Information:
 - Education Requirements: [Required education level]
 
 For Dashboard #1 (Required Skills):
-Extract key technical skills with their importance (%), selection score (%), rejection score (%), and rating (out of 10).
+Extract key technical skills 
 
 For the remaining {remaining_dashboards} dashboards, extract different categories of job requirements. These could include but are not limited to:
 - Technical qualifications
@@ -37,12 +37,6 @@ For the remaining {remaining_dashboards} dashboards, extract different categorie
 For EACH dashboard category, provide:
 - Category name (e.g., "Technical Skills", "Soft Skills", "Certifications")
 - 3-7 items within that category
-- For each item: Name, Importance (%), Selection Score (%), Rejection Score (%), Rating (out of 10)
-
-Importance Score (Sum: 100% per category): Represents the relative priority of each item based on prominence in the job description.
-Selection Score (Sum: 100% across all items): Indicates how much each item contributes to candidate selection.
-Rejection Score (Sum: 100% across all items): Indicates how much lacking each item would impact candidate's rejection.
-Rating: Score out of 10 calculated as (Importance × 10 ÷ highest importance percentage in that category)
 
 Format your response with CONSISTENT structure as follows with one blank line between each section:
 
@@ -60,38 +54,32 @@ Primary Responsibilities: [Main job duties]
 
 if {num_dashboards} = 1:
 Then only output Dashboard #1 - Required Skills:
-- [Skill Name]: Importance: [X]% Selection Score: [Y]% Rejection Score: [Z]% Rating: [R]/10
-- [Next Skill]: Importance: [X]% Selection Score: [Y]% Rejection Score: [Z]% Rating: [R]/10
+- [Skill Name]: 
+- [Next Skill]: 
 
 if {num_dashboards} = 2 :
 Dashboard #1 - Required Skills:
-- [Skill Name]: Importance: [X]% Selection Score: [Y]% Rejection Score: [Z]% Rating: [R]/10
-- [Next Skill]: Importance: [X]% Selection Score: [Y]% Rejection Score: [Z]% Rating: [R]/10
+- [Skill Name]: 
+- [Next Skill]: 
 
 Dashboard #2 - [Category Name]:
-- [Item Name]: Importance: [X]% Selection Score: [Y]% Rejection Score: [Z]% Rating: [R]/10
-- [Next Item]: Importance: [X]% Selection Score: [Y]% Rejection Score: [Z]% Rating: [R]/10
-
+- [Skill Name]: 
+- [Next Skill]: 
 if {num_dashboards} = 3 or more:
 Dashboard #1 - Required Skills:
-- [Skill Name]: Importance: [X]% Selection Score: [Y]% Rejection Score: [Z]% Rating: [R]/10
-- [Next Skill]: Importance: [X]% Selection Score: [Y]% Rejection Score: [Z]% Rating: [R]/10
-
+- [Skill Name]: 
+- [Next Skill]: 
 Dashboard #2 - [Category Name]:
-- [Item Name]: Importance: [X]% Selection Score: [Y]% Rejection Score: [Z]% Rating: [R]/10
-- [Next Item]: Importance: [X]% Selection Score: [Y]% Rejection Score: [Z]% Rating: [R]/10
-
+- [Skill Name]: 
+- [Next Skill]: 
 Dashboard #3 - [Category Name]:
-- [Item Name]: Importance: [X]% Selection Score: [Y]% Rejection Score: [Z]% Rating: [R]/10
-- [Next Item]: Importance: [X]% Selection Score: [Y]% Rejection Score: [Z]% Rating: [R]/10
-
+- [Skill Name]: 
+- [Next Skill]: 
 (Continue for all {num_dashboards} dashboards)
 
 Rules:
 - You MUST extract the position title, required experience, and location if available
 - If exact years of experience aren't stated, estimate based on seniority level
-- Importance percentages should sum to 100% within each category
-- Selection and Rejection scores should each sum to 100% across all items
 - Each dashboard category MUST be different and distinct
 - if {num_dashboards} = 1, then only output Dashboard #1 - Required Skills, if {num_dashboards} = 2, then only output Dashboard #1 - Required Skills and Dashboard #2 - [Category Name]
 - Each dashboard MUST have at least 3 items
@@ -146,6 +134,8 @@ The questions should focus on:
 If the job description doesn't provide information for a particular answer, begin with "The job description doesn't specify this, but..." and then make a reasonable inference.
 
 Ensure questions are distributed across all dashboard categories, with emphasis on skills with higher importance ratings.
+
+Make sure the questions are like interview questions asking to the person and not like survey questions.
 """
 
 def analyze_job_description(job_description, num_dashboards):

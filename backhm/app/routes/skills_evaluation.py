@@ -49,7 +49,6 @@ analyze_job_description_router = APIRouter()
 create_dashboards_router = APIRouter()
 logger = logging.getLogger(__name__)
 
-
 # Define response models
 class JobDescriptionResponse(BaseModel):
     job_id: int
@@ -72,6 +71,7 @@ class DashboardResponse(BaseModel):
     selection_threshold: Optional[int] = 0
     rejection_threshold: Optional[int] = 0
     
+# Function to clean text of encoding artifacts and special characters
 def clean_text(text):
     if not text or text == "Not specified":
         return text
@@ -1062,7 +1062,75 @@ async def get_threshold_details(threshold_id: int, db: Session = Depends(get_db)
         logger.error(f"Error retrieving threshold details: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Error retrieving threshold details: {str(e)}")
 
-# Add this new endpoint to the existing router
+# API endpoint for manual creation of job descriptions
+@analyze_job_description_router.post("/api/create-job-description", response_model=Dict[str, Any])
+async def create_job_description(job_data: Dict[str, Any], db: Session = Depends(get_db)):
+    """
+    Create a new job description from manually entered data.
+    This endpoint handles creating a job description without uploading a PDF.
+    """
+    try:
+        # Extract the user_id, defaulting to '1' if not provided
+        user_id = job_data.get('user_id', '1')
+        
+        # Validate the user exists
+        user = db.query(User).filter(User.user_id == user_id).first()
+        if not user:
+            raise HTTPException(status_code=404, detail="User not found")
+        
+        # Create JobDescription entry using the provided data
+        job_description = JobDescription(
+            title=job_data.get('title', 'Not specified'),
+            description=job_data.get('description', ''),
+            raw_text=job_data.get('raw_text', ''),  # Store content as raw_text
+            keywords=job_data.get('keywords', ''),
+            status="Active",
+            department=job_data.get('department', ''),
+            required_skills=job_data.get('required_skills', ''),
+            experience_level=job_data.get('experience_level', ''),
+            education_requirements=job_data.get('education_requirements', ''),
+            threshold_score=float(job_data.get('threshold_score', 70))
+        )
+        db.add(job_description)
+        db.commit()
+        db.refresh(job_description)
+            
+        # Create ThresholdScore entry
+        threshold_score = ThresholdScore(
+            user_id=user_id,
+            job_id=job_description.job_id,
+            selection_score=float(job_data.get('threshold_score', 70)),
+            rejection_score=30, 
+            threshold_value=50,
+            threshold_result={},
+            threshold_prompts="",
+            custom_prompts="",
+            sample_prompts_history=""
+        )
+        db.add(threshold_score)
+        db.commit()
+        
+        # Associate job with user
+        job_recruiter_assignment = JobRecruiterAssignment(
+            job_id=job_description.job_id,
+            user_id=user.user_id,
+            assigned_date=datetime.utcnow()
+        )
+        db.add(job_recruiter_assignment)
+        db.commit()
+            
+        return {
+            "status": "success",
+            "job_id": job_description.job_id,
+            "message": "Job description successfully created",
+            "title": job_description.title,
+            "threshold_id": threshold_score.threshold_id
+        }
+    except Exception as e:
+        db.rollback()
+        logger.error(f"Error creating job description: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Error creating job description: {str(e)}")
+
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(analyze_job_description_router, host="0.0.0.0", port=8000)

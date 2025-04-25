@@ -104,35 +104,8 @@ const JobDetailsCard = ({ jobDetails, loading, onClose, isCreating = false, newJ
         const result = await response.json();
         console.log('Job created successfully:', result);
         
-        // Create a job entry object that matches the expected format in the JD list
-        const newJobEntry = {
-          id: result.job_id,
-          job_id: result.job_id,
-          role: newJobData.position_title,
-          skills: newJobData.skills_data,
-          fileName: `Job - ${newJobData.position_title}`,
-          uploadDate: new Date().toLocaleDateString(),
-          status: 'Success',
-          threshold: 'View',
-          matchScore: '0.75',
-          relevanceScore: '0.25',
-          fullData: {
-            position_title: newJobData.position_title,
-            required_experience: newJobData.required_experience,
-            location: newJobData.location || '',
-            position_type: newJobData.position_type || '',
-            office_timings: newJobData.office_timings || '',
-            content: newJobData.content,
-            selection_threshold: 0.75,
-            rejection_threshold: 0.25
-          }
-        };
-        
-        // Call onSubmit with the new job entry, no need for additional API calls
-        onSubmit(newJobEntry);
-        
-        // Close the modal
-        onClose();
+        // Call the submit handler with result and formatted data
+        onSubmit({...formattedData, job_id: result.job_id});
       } catch (error) {
         console.error('Error creating job description:', error);
         alert('Failed to create job description. Please try again.');
