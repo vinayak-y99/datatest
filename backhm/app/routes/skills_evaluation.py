@@ -486,6 +486,75 @@ async def extract_job_description(user_id: str, file: UploadFile = File(...), db
         logger.error(f"Extraction error: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
 
+# API endpoint for manual creation of job descriptions
+@analyze_job_description_router.post("/api/create-job-description", response_model=Dict[str, Any])
+async def create_job_description(job_data: Dict[str, Any], db: Session = Depends(get_db)):
+    """
+    Create a new job description from manually entered data.
+    This endpoint handles creating a job description without uploading a PDF.
+    """
+    try:
+        # Extract the user_id, defaulting to '1' if not provided
+        user_id = job_data.get('user_id', '1')
+        
+        # Validate the user exists
+        user = db.query(User).filter(User.user_id == user_id).first()
+        if not user:
+            raise HTTPException(status_code=404, detail="User not found")
+        
+        # Create JobDescription entry using the provided data
+        job_description = JobDescription(
+            title=job_data.get('title', 'Not specified'),
+            description=job_data.get('description', ''),
+            raw_text=job_data.get('raw_text', ''),  # Store content as raw_text
+            keywords=job_data.get('keywords', ''),
+            status="Active",
+            department=job_data.get('department', ''),
+            required_skills=job_data.get('required_skills', ''),
+            experience_level=job_data.get('experience_level', ''),
+            education_requirements=job_data.get('education_requirements', ''),
+            threshold_score=float(job_data.get('threshold_score', 70))
+        )
+        db.add(job_description)
+        db.commit()
+        db.refresh(job_description)
+            
+        # Create ThresholdScore entry
+        threshold_score = ThresholdScore(
+            user_id=user_id,
+            job_id=job_description.job_id,
+            selection_score=float(job_data.get('threshold_score', 70)),
+            rejection_score=30, 
+            threshold_value=50,
+            threshold_result={},
+            threshold_prompts="",
+            custom_prompts="",
+            sample_prompts_history=""
+        )
+        db.add(threshold_score)
+        db.commit()
+        
+        # Associate job with user
+        job_recruiter_assignment = JobRecruiterAssignment(
+            job_id=job_description.job_id,
+            user_id=user.user_id,
+            assigned_date=datetime.utcnow()
+        )
+        db.add(job_recruiter_assignment)
+        db.commit()
+            
+        return {
+            "status": "success",
+            "job_id": job_description.job_id,
+            "message": "Job description successfully created",
+            "title": job_description.title,
+            "threshold_id": threshold_score.threshold_id
+        }
+    except Exception as e:
+        db.rollback()
+        logger.error(f"Error creating job description: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Error creating job description: {str(e)}")
+
 # Second Endpoint: Update Dashboards
 @analyze_job_description_router.put("/api/update_dashboards/", response_model=DashboardResponse)
 async def update_dashboards(job_id: int, num_dashboards: int = Query(ge=1, le=10), db: Session = Depends(get_db)):
@@ -845,16 +914,12 @@ async def delete_job(job_id: int, db: Session = Depends(get_db)):
             db.query(Discussion).filter(Discussion.job_id == job_id).delete()
             logger.info(f"Deleted {len(discussions)} discussions related to job ID {job_id}")
         
-        # Check for Candidates
+        # Delete Candidates - This needs to happen before deleting the job
+        # due to the foreign key constraint
         candidates = db.query(Candidate).filter(Candidate.job_id == job_id).all()
         if candidates:
-            # You may need to handle cascading deletes for candidates if they have related records
-            # For now, just log a warning and don't delete candidates to avoid potential data loss
-            logger.warning(f"Found {len(candidates)} candidates related to job ID {job_id}. "
-                          f"Consider reassigning these candidates to another job.")
-            
-            # Uncomment the line below to delete candidates if that's desired behavior
-            # db.query(Candidate).filter(Candidate.job_id == job_id).delete()
+            db.query(Candidate).filter(Candidate.job_id == job_id).delete()
+            logger.info(f"Deleted {len(candidates)} candidates related to job ID {job_id}")
         
         # 1. Delete JobRequiredSkills entries
         job_skills = db.query(JobRequiredSkills).filter(JobRequiredSkills.job_id == job_id).all()
@@ -1061,75 +1126,6 @@ async def get_threshold_details(threshold_id: int, db: Session = Depends(get_db)
     except Exception as e:
         logger.error(f"Error retrieving threshold details: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Error retrieving threshold details: {str(e)}")
-
-# API endpoint for manual creation of job descriptions
-@analyze_job_description_router.post("/api/create-job-description", response_model=Dict[str, Any])
-async def create_job_description(job_data: Dict[str, Any], db: Session = Depends(get_db)):
-    """
-    Create a new job description from manually entered data.
-    This endpoint handles creating a job description without uploading a PDF.
-    """
-    try:
-        # Extract the user_id, defaulting to '1' if not provided
-        user_id = job_data.get('user_id', '1')
-        
-        # Validate the user exists
-        user = db.query(User).filter(User.user_id == user_id).first()
-        if not user:
-            raise HTTPException(status_code=404, detail="User not found")
-        
-        # Create JobDescription entry using the provided data
-        job_description = JobDescription(
-            title=job_data.get('title', 'Not specified'),
-            description=job_data.get('description', ''),
-            raw_text=job_data.get('raw_text', ''),  # Store content as raw_text
-            keywords=job_data.get('keywords', ''),
-            status="Active",
-            department=job_data.get('department', ''),
-            required_skills=job_data.get('required_skills', ''),
-            experience_level=job_data.get('experience_level', ''),
-            education_requirements=job_data.get('education_requirements', ''),
-            threshold_score=float(job_data.get('threshold_score', 70))
-        )
-        db.add(job_description)
-        db.commit()
-        db.refresh(job_description)
-            
-        # Create ThresholdScore entry
-        threshold_score = ThresholdScore(
-            user_id=user_id,
-            job_id=job_description.job_id,
-            selection_score=float(job_data.get('threshold_score', 70)),
-            rejection_score=30, 
-            threshold_value=50,
-            threshold_result={},
-            threshold_prompts="",
-            custom_prompts="",
-            sample_prompts_history=""
-        )
-        db.add(threshold_score)
-        db.commit()
-        
-        # Associate job with user
-        job_recruiter_assignment = JobRecruiterAssignment(
-            job_id=job_description.job_id,
-            user_id=user.user_id,
-            assigned_date=datetime.utcnow()
-        )
-        db.add(job_recruiter_assignment)
-        db.commit()
-            
-        return {
-            "status": "success",
-            "job_id": job_description.job_id,
-            "message": "Job description successfully created",
-            "title": job_description.title,
-            "threshold_id": threshold_score.threshold_id
-        }
-    except Exception as e:
-        db.rollback()
-        logger.error(f"Error creating job description: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"Error creating job description: {str(e)}")
 
 if __name__ == "__main__":
     import uvicorn
