@@ -1,29 +1,24 @@
 import gradio as gr
 import re
-import pandas as pd
-import matplotlib.pyplot as plt
-import numpy as np
-import io
-import random
 import logging
-from PIL import Image
+import traceback
+import google.generativeai as genai
+from typing import Dict, List
 
+
+# Configure logging
+logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-job_description_template = """Analyze this job description and extract the following information to create {num_dashboards} distinct dashboards for visualizing different aspects of the job:
-
-Basic Information:
-- Position Title: [Job Title]
-- Required Experience: [X years]
-- Location: [City, State/Country]
-- Contact: [Email and/or Phone if available]
-- Position Type: [Contract or Permanent]
-- Department: [Department name]
-- Office Timings: [Morning shift or Night shift]
-- Education Requirements: [Required education level]
+# Base prompt template for job description analysis
+def generate_prompt_template(num_dashboards):
+    """Dynamically generate the prompt template based on dashboard count"""
+    remaining_dashboards = max(0, num_dashboards - 1)
+    
+    template = f"""Analyze this job description and extract information to create {num_dashboards} distinct dashboards for visualizing different aspects of the job:
 
 For Dashboard #1 (Required Skills):
-Extract key technical skills with their importance (%), selection score (%), rejection score (%), and rating (out of 10).
+Extract key technical skills with their importance (%), rating (out of 10).
 
 For the remaining {remaining_dashboards} dashboards, extract different categories of job requirements. These could include but are not limited to:
 - Technical qualifications
@@ -40,319 +35,139 @@ For the remaining {remaining_dashboards} dashboards, extract different categorie
 For EACH dashboard category, provide:
 - Category name (e.g., "Technical Skills", "Soft Skills", "Certifications")
 - 3-7 items within that category
-- For each item: Name, Importance (%), Selection Score (%), Rejection Score (%), Rating (out of 10)
+- For each item: Name, Importance (%), Rating (out of 10)
 
 Importance Score (Sum: 100% per category): Represents the relative priority of each item based on prominence in the job description.
-Selection Score (Sum: 100% across all items): Indicates how much each item contributes to candidate selection.
-Rejection Score (Sum: 100% across all items): Indicates how much lacking each item would impact candidate's rejection.
 Rating: Score out of 10 calculated as (Importance × 10 ÷ highest importance percentage in that category)
 
 Format your response with CONSISTENT structure as follows with one blank line between each section:
 
-Basic Information:
-- Position Title: [Job Title]
-- Required Experience: [X years]
-- Location: [City, State/Country]
-- Contact: [Email and/or Phone if available]
-- Position Type: [Contract or Permanent]
-- Department: [Department name]
-- Office Timings: [Morning shift or Night shift]
-- Education Requirements: [Required education level]
-
-Primary Responsibilities: [Main job duties]
-
+if {num_dashboards} = 1:
+Then only output Dashboard #1 - Required Skills:
+- [Skill Name]: Importance: [X]% Rating: [R]/10
+- [Next Skill]: Importance: [X]% Rating: [R]/10
+if {num_dashboards} = 2 :
 Dashboard #1 - Required Skills:
-- [Skill Name]: Importance: [X]% Selection Score: [Y]% Rejection Score: [Z]% Rating: [R]/10
-- [Next Skill]: Importance: [X]% Selection Score: [Y]% Rejection Score: [Z]% Rating: [R]/10
+- [Skill Name]: Importance: [X]% Rating: [R]/10
+- [Next Skill]: Importance: [X]% Rating: [R]/10
 
 Dashboard #2 - [Category Name]:
-- [Item Name]: Importance: [X]% Selection Score: [Y]% Rejection Score: [Z]% Rating: [R]/10
-- [Next Item]: Importance: [X]% Selection Score: [Y]% Rejection Score: [Z]% Rating: [R]/10
+- [Item Name]: Importance: [X]% Rating: [R]/10
+- [Next Item]: Importance: [X]% Rating: [R]/10
+
+if {num_dashboards} = 3 or more:
+Dashboard #1 - Required Skills:
+- [Skill Name]: Importance: [X]% Rating: [R]/10
+- [Next Skill]: Importance: [X]% Rating: [R]/10
+
+Dashboard #2 - [Category Name]:
+- [Item Name]: Importance: [X]% Rating: [R]/10
+- [Next Item]: Importance: [X]% Rating: [R]/10
 
 Dashboard #3 - [Category Name]:
-- [Item Name]: Importance: [X]% Selection Score: [Y]% Rejection Score: [Z]% Rating: [R]/10
-- [Next Item]: Importance: [X]% Selection Score: [Y]% Rejection Score: [Z]% Rating: [R]/10
+- [Item Name]: Importance: [X]% Rating: [R]/10
+- [Next Item]: Importance: [X]% Rating: [R]/10
 
 (Continue for all {num_dashboards} dashboards)
 
 Threshold Recommendations:
-- Job Match Benchmark: [X]%
-- High Score Threshold: [X]%
-- High Match Threshold: [X]%
-- Mid Score Threshold: [X]%
-- Mid Match Threshold: [X]%
-- Critical Skill Importance: [X]%
-- Experience Score Multiplier: [X.X]
-- Overall Threshold Value: [X]%
-- Selection Threshold: [X]%
-- Rejection Threshold: [X]%
+Selection Threshold: 70%
+Rejection Threshold: 30%
 
 Rules:
-- You MUST extract the position title, required experience, and location if available
-- If exact years of experience aren't stated, estimate based on seniority level
-- Importance percentages should sum to 100% within each category
-- Selection and Rejection scores should each sum to 100% across all items
 - Each dashboard category MUST be different and distinct
+- if {num_dashboards} = 1, then only output Dashboard #1 - Required Skills, if {num_dashboards} = 2, then only output Dashboard #1 - Required Skills and Dashboard #2 - [Category Name]
 - Each dashboard MUST have at least 3 items
 - Numbers should be rounded to one decimal place
 - If information for a requested dashboard is not available in the job description, create a relevant category that would be useful for this job position
-- For threshold recommendations, use standard ranges based on job complexity and seniority
 
 Job Description:
-{context}"""
+{{context}}"""
 
-def parse_dynamic_skills_data(analysis_text):
-    """Parse the analysis text to extract structured data with dynamic dashboard categories."""
-    data = {
-        "basic_info": {},
-        "responsibilities": "",
-        "dashboards": {},
-        "thresholds": {}
+    return template
+
+# Custom dashboard configuration functions
+def configure_dashboard_content(dashboard_type):
+    """Generate custom prompts for specific dashboard types"""
+    prompts = {
+        "required_skills": """For this 'Required Skills' dashboard:
+Extract 4-6 essential technical skills directly mentioned in the job description.
+For each skill:
+- Calculate Importance (%) based on frequency and emphasis in the description
+- Rate each skill out of 10 based on relative importance
+
+Format skills as:
+- [Skill Name]: Importance: [X]% Rating: [R]/10""",
+
+        "soft_skills": """For this 'Soft Skills' dashboard:
+Identify 3-5 interpersonal and non-technical skills valued in this position.
+For each soft skill:
+- Calculate Importance (%) based on mentions and context in the description
+- Rate each skill out of 10 based on relative importance
+
+Format as:
+- [Soft Skill]: Importance: [X]% Rating: [R]/10""",
+
+        "certifications": """For this 'Certifications & Qualifications' dashboard:
+Extract 3-5 formal certifications, degrees, or credentials mentioned or implied.
+For each certification:
+- Calculate Importance (%) based on emphasis in requirements
+- Rate each out of 10 based on relative importance
+
+Format as:
+- [Certification/Qualification]: Importance: [X]% Rating: [R]/10""",
+
+        "experience": """For this 'Experience Requirements' dashboard:
+Identify 3-5 types of experience (domain, tools, methodologies) required.
+For each experience type:
+- Calculate Importance (%) based on prominence in the description
+- Rate each out of 10 based on relative importance
+
+Format as:
+- [Experience Type]: Importance: [X]% Rating: [R]/10""",
+
+        "management_skills": """For this 'Management & Leadership' dashboard:
+Extract 3-5 leadership or management competencies needed for this role.
+For each competency:
+- Calculate Importance (%) based on frequency and emphasis
+- Rate each out of 10 based on relative importance
+
+Format as:
+- [Management Skill]: Importance: [X]% Rating: [R]/10""",
+        
+        "technical_tools": """For this 'Technical Tools & Systems' dashboard:
+Extract 3-5 specific tools, platforms, or technologies mentioned.
+For each tool:
+- Calculate Importance (%) based on frequency and emphasis
+- Rate each out of 10 based on relative importance
+
+Format as:
+- [Tool/System]: Importance: [X]% Rating: [R]/10"""
     }
     
-    # Extract basic information
-    basic_info_match = re.search(r"Basic Information:(.*?)(?:Primary Responsibilities:|$)", analysis_text, re.DOTALL)
-    if basic_info_match:
-        basic_info_text = basic_info_match.group(1).strip()
-        for line in basic_info_text.split('\n'):
-            if ':' in line:
-                key, value = line.split(':', 1)
-                key = key.strip('- ')
-                data["basic_info"][key] = value.strip()
-    
-    # Extract primary responsibilities
-    resp_match = re.search(r"Primary Responsibilities:(.*?)(?:Dashboard #1|$)", analysis_text, re.DOTALL)
-    if resp_match:
-        data["responsibilities"] = resp_match.group(1).strip()
-    
-    # Extract all dashboards dynamically
-    dashboard_pattern = r"Dashboard #(\d+) - ([^:]+):(.*?)(?:Dashboard #\d+|Threshold Recommendations:|$)"
-    dashboard_matches = re.finditer(dashboard_pattern, analysis_text, re.DOTALL)
-    
-    for match in dashboard_matches:
-        dashboard_num = match.group(1)
-        category_name = match.group(2).strip()
-        dashboard_content = match.group(3).strip()
-        
-        data["dashboards"][category_name] = {}
-        
-        for item_line in dashboard_content.split('\n'):
-            if not item_line.strip():
-                continue
-            item_match = re.search(r"- (.*?): Importance: (\d+\.\d+)% Selection Score: (\d+\.\d+)% Rejection Score: (\d+\.\d+)% Rating: (\d+\.\d+)/10", item_line)
-            if item_match:
-                item_name, importance, selection, rejection, rating = item_match.groups()
-                data["dashboards"][category_name][item_name] = {
-                    "importance": float(importance),
-                    "selection_score": float(selection),
-                    "rejection_score": float(rejection),
-                    "rating": float(rating)
-                }
-    
-    # Extract thresholds
-    thresholds_match = re.search(r"Threshold Recommendations:(.*?)(?:$)", analysis_text, re.DOTALL)
-    if thresholds_match:
-        thresholds_text = thresholds_match.group(1).strip()
-        for threshold_line in thresholds_text.split('\n'):
-            if not threshold_line.strip():
-                continue
-            threshold_match = re.search(r"- (.*?): (\d+\.\d+)%", threshold_line)
-            multiplier_match = re.search(r"- (.*?): (\d+\.\d+)", threshold_line)
-            if threshold_match:
-                threshold_name, value = threshold_match.groups()
-                data["thresholds"][threshold_name] = float(value)
-            elif multiplier_match:
-                threshold_name, value = multiplier_match.groups()
-                data["thresholds"][threshold_name] = float(value)
-    
-    return data
+    return prompts.get(dashboard_type, "")
 
-def generate_dynamic_dashboards(skills_data):
-    """Generate multiple dashboard visualizations for the parsed data."""
-    if not skills_data or "dashboards" not in skills_data or not skills_data["dashboards"]:
-        return []
-    
-    dashboard_images = []
-    
-    # Generate a dashboard for each category
-    for category_name, items in skills_data["dashboards"].items():
-        if not items:
-            continue
-            
-        # Create a figure with subplots for this category
-        fig, axs = plt.subplots(2, 2, figsize=(14, 12))
-        fig.suptitle(f"Dashboard: {category_name} - {skills_data['basic_info'].get('Position Title', 'Job Position')}", fontsize=16)
-        
-        # 1. Rating Radar Chart
-        ax1 = axs[0, 0]
-        item_names = list(items.keys())
-        ratings = [items[item]["rating"] for item in item_names]
-        
-        # Number of variables
-        N = len(item_names)
-        if N > 0:
-            # Compute angles for radar chart
-            angles = [n / float(N) * 2 * np.pi for n in range(N)]
-            angles += angles[:1]  # Close the loop
-            
-            # Add the first rating again to close the loop
-            ratings += ratings[:1]
-            
-            # Draw the radar chart
-            ax1.plot(angles, ratings, linewidth=1, linestyle='solid')
-            ax1.fill(angles, ratings, alpha=0.25)
-            
-            # Set up the radar chart
-            ax1.set_xticks(angles[:-1])
-            ax1.set_xticklabels(item_names, fontsize=8)
-            ax1.set_yticks([2, 4, 6, 8, 10])
-            ax1.set_yticklabels(['2', '4', '6', '8', '10'])
-            ax1.set_ylim(0, 10)
-            ax1.set_title(f'{category_name} Rating (out of 10)')
-        else:
-            ax1.text(0.5, 0.5, "No data available", ha='center', va='center')
-        
-        # 2. Importance Bar Chart
-        ax2 = axs[0, 1]
-        if item_names:
-            importance_values = [items[item]["importance"] for item in item_names]
-            ax2.barh(item_names, importance_values)
-            ax2.set_xlabel('Importance (%)')
-            ax2.set_title(f'{category_name} Importance')
-            
-            # Add value labels
-            for i, v in enumerate(importance_values):
-                ax2.text(v + 0.5, i, f"{v}%", va='center')
-        else:
-            ax2.text(0.5, 0.5, "No data available", ha='center', va='center')
-        
-        # 3. Selection vs. Rejection Scores
-        ax3 = axs[1, 0]
-        if item_names:
-            selection = [items[item]["selection_score"] for item in item_names]
-            rejection = [items[item]["rejection_score"] for item in item_names]
-            
-            x = np.arange(len(item_names))
-            width = 0.35
-            
-            ax3.bar(x - width/2, selection, width, label='Selection Score')
-            ax3.bar(x + width/2, rejection, width, label='Rejection Score')
-            
-            ax3.set_ylabel('Score (%)')
-            ax3.set_title('Selection vs. Rejection Scores')
-            ax3.set_xticks(x)
-            ax3.set_xticklabels(item_names, rotation=45, ha='right', fontsize=8)
-            ax3.legend()
-        else:
-            ax3.text(0.5, 0.5, "No data available", ha='center', va='center')
-        
-        # 4. Relative Importance Pie Chart
-        ax4 = axs[1, 1]
-        if item_names:
-            importance_values = [items[item]["importance"] for item in item_names]
-            ax4.pie(importance_values, labels=item_names, autopct='%1.1f%%', startangle=90)
-            ax4.axis('equal')  # Equal aspect ratio ensures that pie is drawn as a circle
-            ax4.set_title(f'Relative Importance of {category_name}')
-        else:
-            ax4.text(0.5, 0.5, "No data available", ha='center', va='center')
-        
-        plt.tight_layout(rect=[0, 0, 1, 0.96])
-        
-        # Save figure to a BytesIO object
-        buf = io.BytesIO()
-        plt.savefig(buf, format='png', dpi=100)
-        buf.seek(0)
-        
-        # Convert to PIL image
-        dashboard_img = Image.open(buf)
-        # Store both the caption and image in the list
-        dashboard_images.append((category_name, dashboard_img))
-        
-        plt.close(fig)
-    
-    # Create a summary dashboard with thresholds
-    if skills_data["thresholds"]:
-        fig, ax = plt.subplots(figsize=(12, 8))
-        fig.suptitle(f"Threshold Recommendations - {skills_data['basic_info'].get('Position Title', 'Job Position')}", fontsize=16)
-        
-        thresholds = list(skills_data["thresholds"].keys())
-        values = [skills_data["thresholds"][threshold] for threshold in thresholds]
-        
-        ax.barh(thresholds, values)
-        ax.set_xlabel('Value')
-        ax.set_title('Threshold Recommendations')
-        
-        # Add value labels
-        for i, v in enumerate(values):
-            if "Multiplier" in thresholds[i]:
-                ax.text(v + 0.05, i, f"{v}", va='center')
-            else:
-                ax.text(v + 1, i, f"{v}%", va='center')
-        
-        plt.tight_layout(rect=[0, 0, 1, 0.96])
-        
-        # Save figure to a BytesIO object
-        buf = io.BytesIO()
-        plt.savefig(buf, format='png', dpi=100)
-        buf.seek(0)
-        
-        # Convert to PIL image
-        threshold_img = Image.open(buf)
-        dashboard_images.append(("Threshold Recommendations", threshold_img))
-        
-        plt.close(fig)
-    
-    # Convert to the format expected by Gradio Gallery
-    formatted_images = []
-    for caption, img in dashboard_images:
-        formatted_images.append((img, caption))  # Gradio expects (image, caption) tuples
-    
-    return formatted_images
-
-def generate_dynamic_prompts(skills_data, count=10):
-    """Generate dynamic prompts based on skills data."""
-    if not skills_data or "dashboards" not in skills_data:
-        return "Please upload and analyze a job description first."
-   
-    prompts = []
-    
-    # Generate prompts for all dashboard items
-    for category, items in skills_data["dashboards"].items():
-        for item_name, data in items.items():
-            current_rating = float(data.get('rating', 0))
-            current_importance = float(data.get('importance', 0))
-            current_selection = float(data.get('selection_score', 0))
-            current_rejection = float(data.get('rejection_score', 0))
-           
-            new_prompts = [
-                f"Update {item_name}'s rating from {current_rating:.1f} to {min(10, current_rating + 1):.1f} in {category}",
-                f"Change {item_name}'s importance from {current_importance:.1f}% to {min(100, current_importance + 5):.1f}% in {category}",
-                f"Set {item_name}'s selection score from {current_selection:.1f}% to {min(100, current_selection + 10):.1f}% in {category}",
-                f"Adjust {item_name}'s rejection score from {current_rejection:.1f}% to {min(100, current_rejection + 10):.1f}% in {category}"
-            ]
-            prompts.extend(new_prompts)
-   
-    if not prompts:
-        return "No data available to generate prompts."
-        
-    selected_prompts = random.sample(prompts, min(len(prompts), count))
-    return "\n".join(selected_prompts)
-
-def analyze_job_description(job_description, num_dashboards):
-    """Call AI service to analyze the job description."""
-    # Adjust the template based on number of dashboards
-    remaining_dashboards = max(0, num_dashboards - 1)
-    template = job_description_template.format(
-        num_dashboards=num_dashboards,
-        remaining_dashboards=remaining_dashboards,
-        context=job_description
-    )
-    
+def analyze_job_description(job_description, num_dashboards, dashboard_types=None):
+    """Call AI service to analyze the job description with custom dashboard types."""
     try:
+        # Generate the base template for the number of dashboards
+        template = generate_prompt_template(num_dashboards)
+        
+        # If custom dashboard types are specified, add their specific instructions
+        if dashboard_types and len(dashboard_types) > 0:
+            custom_instructions = "\n\nCustom Dashboard Instructions:\n"
+            for i, dashboard_type in enumerate(dashboard_types):
+                if i < num_dashboards and dashboard_type in configure_dashboard_content:
+                    custom_instructions += f"\nFor Dashboard #{i+1}:\n{configure_dashboard_content(dashboard_type)}\n"
+            
+            # Insert custom instructions before the rules section
+            template = template.replace("Rules:", f"{custom_instructions}\nRules:")
+        
+        # Format the template with the job description
+        formatted_template = template.format(context=job_description)
+        
         # Use the provided API key directly
         api_key = "AIzaSyB3ZN_ICuWtHUypL1vhvORWA7KwoNiKVMw"
-        
-        import google.generativeai as genai
         
         # Configure the API
         genai.configure(api_key=api_key)
@@ -361,118 +176,363 @@ def analyze_job_description(job_description, num_dashboards):
         model = genai.GenerativeModel('gemini-2.0-flash')
         
         # Generate the analysis
-        response = model.generate_content(template)
+        response = model.generate_content(formatted_template)
         
         # Return the analysis text
-        return response.text
+        analysis_text = response.text
+        
+        # Clean any threshold recommendations or suggested adjustments that might still appear
+        cleaned_text = remove_thresholds_and_adjustments(analysis_text)
+        
+        return cleaned_text
         
     except Exception as e:
         logger.error(f"Error analyzing job description: {str(e)}")
+        logger.error(traceback.format_exc())
         return f"Error analyzing job description: {str(e)}"
 
+def remove_thresholds_and_adjustments(text):
+    """Remove any threshold recommendations or suggested adjustments from text."""
+    # Patterns to remove (case insensitive)
+    patterns_to_remove = [
+        r"Threshold Recommendations:.*?(?=\n\n|\Z)",
+        r"Suggested Adjustments:.*?(?=\n\n|\Z)",
+        r"Job Match Benchmark:.*?\n",
+        r"High Score Threshold:.*?\n",
+        r"High Match Threshold:.*?\n",
+        r"Mid Score Threshold:.*?\n",
+        r"Mid Match Threshold:.*?\n",
+        r"Critical Skill Importance:.*?\n",
+        r"Experience Score Multiplier:.*?\n",
+        r"Overall Threshold Value:.*?\n",
+        r"Selection Threshold:.*?\n",
+        r"Rejection Threshold:.*?\n",
+        r"Threshold:.*?\n",  # catches any remaining "Threshold: ..." lines
+        r"Benchmark:.*?\n",  # catches any remaining "Benchmark: ..." lines
+        r"Recommendations:.*?(?=\n\n|\Z)",
+        r"Suggestions:.*?(?=\n\n|\Z)"
+    ]
+    
+    cleaned_text = text
+    for pattern in patterns_to_remove:
+        cleaned_text = re.sub(pattern, "", cleaned_text, flags=re.IGNORECASE | re.DOTALL)
+    
+    # Clean up any double newlines created by removals
+    cleaned_text = re.sub(r"\n{3,}", "\n\n", cleaned_text)
+    
+    return cleaned_text.strip()
 
-def extract_and_visualize(job_description, num_dashboards):
-    """Extract data from job description and generate visualizations."""
+def extract_and_analyze(job_description, num_dashboards, dashboard_config=None):
+    """Extract data from job description without thresholds or adjustments."""
     if not job_description or job_description.strip() == "":
-        return "Please enter a job description.", [], "No data to generate prompts from."
+        return "Please enter a job description."
     
     # Limit number of dashboards to a reasonable range
     num_dashboards = max(1, min(int(num_dashboards), 10))
     
+    # Default dashboard configuration if none provided
+    if not dashboard_config or dashboard_config.strip() == "":
+        dashboard_types = None  # Use default analysis
+    else:
+        try:
+            # Parse the dashboard configuration
+            dashboard_types = [d.strip() for d in dashboard_config.split(',')]
+        except:
+            dashboard_types = None
+    
     # Analyze the job description
-    analysis_text = analyze_job_description(job_description, num_dashboards)
+    analysis_text = analyze_job_description(job_description, num_dashboards, dashboard_types)
     
-    # Parse the analysis text to extract structured data
-    skills_data = parse_dynamic_skills_data(analysis_text)
+    return analysis_text
+
+def get_dashboard_prompt(dashboard_type):
+    """Return the specific prompt for a dashboard type"""
+    prompts = configure_dashboard_content(dashboard_type)
+    return prompts or "Standard dashboard analysis will be used."
+
+# New function for dashboard modification
+def generate_dashboard_modification_prompt(original_analysis, modification_request):
+    """Generate a prompt to modify existing dashboard analysis"""
+    template = f"""You are an expert dashboard customization assistant. I have already analyzed a job description and created the following dashboards:
+
+{original_analysis}
+
+Now I need you to modify these dashboards based on the following request:
+{modification_request}
+
+When making modifications, please follow these guidelines:
+1. Maintain the same format for each item: "[Item Name]: Importance: [X]% Rating: [R]/10"
+2. Ensure importance percentages within each dashboard still sum to 100%
+3. Recalculate ratings as needed, where Rating = (Importance × 10 ÷ highest importance in category)
+4. Keep dashboard headings in the format "Dashboard #N - [Category Name]:"
+5. Each dashboard should have 3-7 items
+6. Numbers should be rounded to one decimal place
+
+Return the complete modified dashboard set with all dashboards, not just the changed ones.
+Format your response exactly as the original but with the requested changes implemented.
+"""
+    return template
+
+def modify_dashboards(original_analysis, modification_request):
+    """Call AI service to modify the dashboard analysis."""
+    try:
+        if not original_analysis or original_analysis.strip() == "":
+            return "Please provide the current dashboard analysis to modify."
+        
+        if not modification_request or modification_request.strip() == "":
+            return "Please provide a modification request."
+        
+        # Generate the modification prompt
+        template = generate_dashboard_modification_prompt(original_analysis, modification_request)
+        
+        # Configure the API
+        api_key = "AIzaSyB3ZN_ICuWtHUypL1vhvORWA7KwoNiKVMw"
+        genai.configure(api_key=api_key)
+        
+        # Initialize the model
+        model = genai.GenerativeModel('gemini-2.0-flash')
+        
+        # Generate the modified analysis
+        response = model.generate_content(template)
+        
+        # Return the modified analysis
+        return response.text
+        
+    except Exception as e:
+        logger.error(f"Error modifying dashboards: {str(e)}")
+        logger.error(traceback.format_exc())
+        return f"Error modifying dashboards: {str(e)}"
+
+# New function to extract dashboard categories and items
+def extract_dashboard_info(analysis_text):
+    """Extract dashboard categories and items from analysis text"""
+    dashboard_info = []
     
-    # Generate dashboards
-    dashboard_images = generate_dynamic_dashboards(skills_data)
+    # Regular expression to find dashboard titles
+    dashboard_pattern = r"Dashboard #(\d+) - ([^:]+):"
+    dashboards = re.finditer(dashboard_pattern, analysis_text)
     
-    # Generate prompts based on the skills data
-    prompts = generate_dynamic_prompts(skills_data)
+    for match in dashboards:
+        dashboard_num = match.group(1)
+        category = match.group(2).strip()
+        
+        # Find the start position of this dashboard
+        start_pos = match.start()
+        
+        # Find the next dashboard or end of text
+        next_match = re.search(r"Dashboard #\d+", analysis_text[start_pos+1:])
+        if next_match:
+            end_pos = start_pos + 1 + next_match.start()
+        else:
+            end_pos = len(analysis_text)
+        
+        # Extract the section for this dashboard
+        dashboard_section = analysis_text[start_pos:end_pos]
+        
+        # Extract items in this dashboard
+        items = []
+        item_pattern = r"- ([^:]+): Importance: (\d+\.?\d*)% Rating: (\d+\.?\d*)/10"
+        for item_match in re.finditer(item_pattern, dashboard_section):
+            item_name = item_match.group(1).strip()
+            importance = float(item_match.group(2))
+            rating = float(item_match.group(3))
+            items.append({"name": item_name, "importance": importance, "rating": rating})
+        
+        dashboard_info.append({
+            "number": dashboard_num,
+            "category": category,
+            "items": items
+        })
     
-    return analysis_text, dashboard_images, prompts
+    return dashboard_info
+
+# New function to generate dynamic sample prompts
+def generate_dynamic_sample_prompts(analysis_text):
+    """Generate sample modification prompts based on analysis results"""
+    if not analysis_text or "Dashboard" not in analysis_text:
+        return "### Sample Modification Prompts\n\n*Analyze a job description first to see customized sample prompts.*"
+    
+    try:
+        # Extract dashboard information
+        dashboards = extract_dashboard_info(analysis_text)
+        
+        if not dashboards:
+            return "### Sample Modification Prompts\n\n*Could not parse dashboard information. Please ensure the analysis format is correct.*"
+        
+        sample_prompts = ["### Sample Modification Prompts Based on Your Dashboards\n"]
+        
+        # 1. Rebalance importance values
+        if len(dashboards) >= 1 and len(dashboards[0]["items"]) >= 2:
+            first_dashboard = dashboards[0]
+            skill1 = first_dashboard["items"][0]["name"]
+            skill2 = first_dashboard["items"][1]["name"]
+            prompt1 = f"1. **Rebalance importance values:**\n   \"Rebalance the importance percentages in Dashboard #1 - {first_dashboard['category']} to give more weight to {skill1}. Increase {skill1} importance by 15% and reduce {skill2} importance proportionally.\"\n"
+            sample_prompts.append(prompt1)
+        
+        # 2. Add new item to a dashboard
+        if len(dashboards) >= 2:
+            second_dashboard = dashboards[1]
+            category = second_dashboard["category"]
+            new_item = "Problem Solving" if "Soft" in category else "Docker" if "Technical" in category else "Agile Methodology" if "Experience" in category else "Project Management"
+            prompt2 = f"2. **Add new items to a dashboard:**\n   \"Add '{new_item}' with 20% importance to Dashboard #2 - {category}, and adjust other percentages proportionally to maintain 100% total.\"\n"
+            sample_prompts.append(prompt2)
+        
+        # 3. Change dashboard category
+        if len(dashboards) >= 2:
+            existing_cat = dashboards[1]["category"]
+            new_cat = "Communication Skills" if existing_cat != "Communication Skills" else "Leadership Skills"
+            prompt3 = f"3. **Change dashboard category:**\n   \"Change Dashboard #2 from '{existing_cat}' to '{new_cat}' and replace existing items with more specific {new_cat.lower()} (stakeholder management, conflict resolution, team motivation).\"\n"
+            sample_prompts.append(prompt3)
+        
+        # 4. Merge two dashboards
+        if len(dashboards) >= 3:
+            cat1 = dashboards[1]["category"]
+            cat2 = dashboards[2]["category"]
+            prompt4 = f"4. **Merge two dashboards:**\n   \"Combine Dashboard #2 ({cat1}) and Dashboard #3 ({cat2}) into a single dashboard called 'Combined Competencies' with the top 3 items from each, adjusting importance percentages accordingly.\"\n"
+            sample_prompts.append(prompt4)
+        
+        # 5. Prioritize specific areas
+        first_item = dashboards[0]["items"][0]["name"] if dashboards and dashboards[0]["items"] else "Leadership"
+        prompt5 = f"5. **Prioritize specific areas:**\n   \"Recalibrate all dashboards to emphasize {first_item}. For any {first_item.lower()}-related items across dashboards, increase their importance by 10% and reduce other items proportionally.\"\n"
+        sample_prompts.append(prompt5)
+        
+        return "\n".join(sample_prompts)
+    
+    except Exception as e:
+        logger.error(f"Error generating dynamic prompts: {str(e)}")
+        logger.error(traceback.format_exc())
+        return "### Sample Modification Prompts\n\n*Error generating customized prompts. Using default examples instead.*\n\n1. **Rebalance importance values**\n2. **Add new items to a dashboard**\n3. **Change dashboard category**\n4. **Merge two dashboards**\n5. **Prioritize specific areas**"
 
 # Define Gradio interface
 with gr.Blocks(title="Job Description Analyzer") as app:
-    gr.Markdown("# Job Description Analyzer with Dynamic Dashboards")
-    gr.Markdown("Upload or paste a job description to analyze and visualize key requirements on a 1-10 scale.")
+    gr.Markdown("# Job Description Analyzer")
+    gr.Markdown("Upload or paste a job description to analyze key requirements.")
     
-    with gr.Tab("Job Description Analysis"):
-        with gr.Row():
-            with gr.Column(scale=2):
-                job_description_input = gr.Textbox(
-                    lines=10, 
-                    placeholder="Paste job description here...", 
-                    label="Job Description"
-                )
-                num_dashboards_slider = gr.Slider(
-                    minimum=1, 
-                    maximum=10, 
-                    value=3, 
-                    step=1, 
-                    label="Number of Dashboard Categories to Generate"
-                )
-                analyze_button = gr.Button("Analyze Job Description", variant="primary")
+    # State for storing sample prompts markdown
+    sample_prompts_md = gr.State("### Sample Modification Prompts\n\n*Analyze a job description first to see customized sample prompts.*")
+    
+    # Job description input
+    job_description_input = gr.Textbox(
+        lines=10, 
+        placeholder="Paste job description here...", 
+        label="Job Description"
+    )
+    
+    with gr.Tabs() as tabs:
+        with gr.Tab("Job Description Analysis"):
+            with gr.Row():
+                with gr.Column(scale=1):
+                    num_dashboards_slider = gr.Slider(
+                        minimum=1, 
+                        maximum=10, 
+                        value=3, 
+                        step=1, 
+                        label="Number of Dashboard Categories to Generate"
+                    )
+                    
+                    analyze_button = gr.Button("Analyze Job Description", variant="primary")
+                
+                with gr.Column(scale=3):
+                    analysis_output = gr.Textbox(
+                        lines=20, 
+                        label="Analysis Results", 
+                        interactive=False
+                    )
+        
+        with gr.Tab("Modify Dashboards"):
+            with gr.Row():
+                with gr.Column(scale=3):
+                    saved_analysis = gr.Textbox(
+                        lines=15, 
+                        label="Current Dashboard Analysis", 
+                        placeholder="First analyze a job description or paste previous analysis here..."
+                    )
+                
+                with gr.Column(scale=2):
+                    modification_request = gr.Textbox(
+                        lines=5,
+                        label="Modification Request",
+                        placeholder="Describe how you want to modify the dashboards..."
+                    )
+                    modify_button = gr.Button("Modify Dashboards", variant="primary")
             
-            with gr.Column(scale=3):
-                analysis_output = gr.Textbox(
-                    lines=20, 
-                    label="Analysis Results", 
-                    interactive=False
-                )
-        
-        with gr.Row():
-            dashboard_gallery = gr.Gallery(
-                label="Job Analysis Dashboards", 
-                columns=[2], 
-                rows=[3], 
-                object_fit="contain",
-                height="800px"
-            )
-        
-        with gr.Row():
-            prompts_output = gr.Textbox(
-                lines=5, 
-                label="Suggested Adjustments", 
+            modified_output = gr.Textbox(
+                lines=20,
+                label="Modified Dashboard Analysis",
                 interactive=False
             )
+            
+            # Dynamic sample prompts section
+            dynamic_sample_prompts = gr.Markdown(
+                value="### Sample Modification Prompts\n\n*Analyze a job description first to see customized sample prompts.*"
+            )
+            
+        with gr.Tab("Help & Instructions"):
+            gr.Markdown("""
+            ## How to Use This Tool
+            
+            ### Job Description Analysis
+            1. Paste your job description in the input box at the top
+            2. Set the number of dashboard categories you want to generate (1-10)
+            3. Click "Analyze Job Description" to process and extract key information
+            4. View the results with importance percentages and ratings for each item
+            
+            ### Dashboard Modification
+            1. Copy your analysis results to the "Current Dashboard Analysis" box in the Modify tab
+            2. Enter your modification request describing the changes you want to make
+            3. Click "Modify Dashboards" to process your request
+            4. View the updated dashboard results
+            
+            ## Understanding the Results
+            
+            * **Skills Analysis**:
+              - Importance Percentage: Relative priority within category (sums to 100%)
+              - Rating: Importance on scale of 1-10
+            
+            ## Dashboard Types Available
+            
+            * **Required Skills**: Essential technical skills needed for the position
+            * **Soft Skills**: Interpersonal and non-technical abilities
+            * **Certifications**: Required formal qualifications and credentials
+            * **Experience**: Types of experience valued for this role
+            * **Management Skills**: Leadership and management competencies
+            * **Technical Tools**: Specific platforms and technologies
+            """)
     
-    with gr.Tab("Help & Instructions"):
-        gr.Markdown("""
-        ## How to Use This Tool
-        
-        1. **Paste the Job Description**: Enter or paste the job description text into the input box.
-        2. **Adjust Dashboard Count**: Use the slider to specify how many dashboard categories you want to generate (1-5).
-            - Dashboard #1 will always display Required Skills
-            - Additional dashboards will show other categories relevant to the job
-        3. **Click Analyze**: The system will process the job description and extract key information.
-        4. **View Results**: 
-           - The text analysis shows detailed information about requirements and scores
-           - The dashboards visualize different categories of skills and requirements
-           - Suggested adjustments offer ways to modify the analysis
-        
-        ## Understanding the Results
-        
-        * **Skills Rating**: Shows how important each skill is on a scale of 1-10
-        * **Importance Percentage**: Indicates the relative priority of each item
-        * **Selection Score**: How much each item contributes to candidate selection
-        * **Rejection Score**: How much lacking this item would impact a candidate's rejection
-        * **Thresholds**: Recommended scoring parameters for candidate evaluation
-        
-        ## About the Tool
-        
-        This tool extracts structured information from job descriptions to help:
-        
-        * Recruiters better understand job requirements and priorities
-        * Candidates assess their fit for positions
-        * HR teams standardize job evaluation criteria
-        """)
+    # Function to update multiple outputs
+    def update_outputs(analysis_result):
+        # Generate dynamic sample prompts based on analysis result
+        prompts = generate_dynamic_sample_prompts(analysis_result)
+        return analysis_result, analysis_result, prompts
     
+    # Event handlers
     analyze_button.click(
-        fn=extract_and_visualize, 
+        fn=extract_and_analyze, 
         inputs=[job_description_input, num_dashboards_slider], 
-        outputs=[analysis_output, dashboard_gallery, prompts_output]
+        outputs=[analysis_output]
+    )
+    
+    # Update sample prompts when analysis is completed
+    analysis_output.change(
+        fn=update_outputs,
+        inputs=[analysis_output],
+        outputs=[analysis_output, saved_analysis, dynamic_sample_prompts]
+    )
+    
+    # Connect modification button
+    modify_button.click(
+        fn=modify_dashboards,
+        inputs=[saved_analysis, modification_request],
+        outputs=[modified_output]
+    )
+    
+    # Update sample prompts when saved analysis changes
+    saved_analysis.change(
+        fn=generate_dynamic_sample_prompts,
+        inputs=[saved_analysis],
+        outputs=[dynamic_sample_prompts]
     )
 
-app.launch() 
+# Launch the app
+if __name__ == "__main__":
+    app.launch()
