@@ -460,6 +460,7 @@ export default function Threshold({ jdData = {} }) {
           selectedRoles={selectedRolesForThreshold}
           skills_data={skillsData}
           rangeValue={sharedValue}
+          jobId={jdData?.jdId}
         />
       );
     }
@@ -526,9 +527,13 @@ export default function Threshold({ jdData = {} }) {
                       <div className="w-full overflow-x-hidden" style={{height:'auto'}}>
                         <RightSidebar
                           selectedRoles={selectedRolesForThreshold || []}
-                          skills_data={skillsData || {}}
+                          skills_data={skillsData[0]}
+                          jobId={jdData?.jdId}
+                          activeTab={activeDashboard}
+                          initialUseRatings={useRatings}
                           closeSidebar={() => setIsSidebarOpen(false)}
                         />
+                        {/* Note: When slider values are modified, a Save Changes button will appear at the top */}
                       </div>
                     </div>
                   )}

@@ -14,7 +14,7 @@ from app.services.dashboard_service import DashboardService
 from app.services.llm_service import LLMService
 from fastapi import APIRouter, FastAPI, HTTPException, Depends, File, UploadFile, Query
 from io import BytesIO
-from app.models.base import JobDescription, JobRequiredSkills, Skill, ThresholdScore, User, JobRecruiterAssignment, Candidate, Interview, Discussion
+from app.models.base import JobDescription, JobRequiredSkills, Skill, ThresholdScore, User, JobRecruiterAssignment, Candidate, Interview, Discussion, Resume
 import app.database.connection as get_db
 import re
 import openai
@@ -70,6 +70,14 @@ class DashboardResponse(BaseModel):
     # Optional fields for backward compatibility
     selection_threshold: Optional[int] = 0
     rejection_threshold: Optional[int] = 0
+
+# New model for dashboard updates
+class DashboardUpdateRequest(BaseModel):
+    role: str
+    category: str
+    item_name: str
+    new_rating: float
+    job_id: int
     
 # Function to clean text of encoding artifacts and special characters
 def clean_text(text):
@@ -830,6 +838,7 @@ async def parse_dashboards(dashboard_result):
     skills_data["categories"] = categories
 
     return skills_data, dashboard_result, (selection_threshold, rejection_threshold), selected_prompts
+
 # Get individual JobDescription
 @analyze_job_description_router.get("/api/job-description/{job_id}", response_model=Dict[str, Any])
 async def get_job_description(job_id: int, db: Session = Depends(get_db)):
@@ -914,10 +923,21 @@ async def delete_job(job_id: int, db: Session = Depends(get_db)):
             db.query(Discussion).filter(Discussion.job_id == job_id).delete()
             logger.info(f"Deleted {len(discussions)} discussions related to job ID {job_id}")
         
-        # Delete Candidates - This needs to happen before deleting the job
-        # due to the foreign key constraint
+        # Delete Candidates and their associated Resumes - This needs to happen before deleting the job
+        # due to the foreign key constraints
         candidates = db.query(Candidate).filter(Candidate.job_id == job_id).all()
         if candidates:
+            # First, get all candidate IDs
+            candidate_ids = [candidate.candidate_id for candidate in candidates]
+            
+            # Delete associated resumes first to avoid foreign key violation
+            for candidate_id in candidate_ids:
+                resumes = db.query(Resume).filter(Resume.candidate_id == candidate_id).all()
+                if resumes:
+                    db.query(Resume).filter(Resume.candidate_id == candidate_id).delete()
+                    logger.info(f"Deleted resumes for candidate ID {candidate_id}")
+            
+            # Now delete the candidates
             db.query(Candidate).filter(Candidate.job_id == job_id).delete()
             logger.info(f"Deleted {len(candidates)} candidates related to job ID {job_id}")
         
@@ -1126,6 +1146,155 @@ async def get_threshold_details(threshold_id: int, db: Session = Depends(get_db)
     except Exception as e:
         logger.error(f"Error retrieving threshold details: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Error retrieving threshold details: {str(e)}")
+
+@analyze_job_description_router.put("/api/update_dashboard_item/", response_model=Dict[str, Any])
+async def update_dashboard_item(update_data: DashboardUpdateRequest, db: Session = Depends(get_db)):
+    """
+    Update a specific dashboard item's rating when the slider value changes.
+    Updates both the required_skills field in JobDescription and threshold_result in ThresholdScore.
+    """
+    try:
+        # Add more detailed logging
+        logger.info(f"Updating dashboard item with data: {update_data}")
+        
+        # Retrieve job description from database
+        job_description = db.query(JobDescription).filter(JobDescription.job_id == update_data.job_id).first()
+        if not job_description:
+            logger.error(f"Job description not found with ID: {update_data.job_id}")
+            raise HTTPException(status_code=404, detail="Job description not found")
+        
+        # Find existing ThresholdScore entry to update
+        threshold = db.query(ThresholdScore).filter(ThresholdScore.job_id == update_data.job_id).first()
+        if not threshold:
+            logger.error(f"Threshold score not found for job ID: {update_data.job_id}")
+            raise HTTPException(status_code=404, detail="Threshold score not found for this job")
+        
+        logger.info(f"Found threshold record with ID: {threshold.threshold_id}")
+        
+        # Get the skills data from the JobDescription
+        skills_data = {}
+        if job_description.required_skills:
+            try:
+                if isinstance(job_description.required_skills, str):
+                    skills_data = json.loads(job_description.required_skills)
+                    logger.info("Successfully parsed required_skills JSON from string")
+                elif isinstance(job_description.required_skills, dict):
+                    skills_data = job_description.required_skills
+                    logger.info("Using required_skills as dict")
+                else:
+                    logger.warning(f"Unexpected type for required_skills: {type(job_description.required_skills)}")
+            except json.JSONDecodeError:
+                logger.error("Error parsing required_skills JSON")
+                skills_data = {}
+        
+        # Get threshold_result data
+        threshold_result = {}
+        if threshold.threshold_result:
+            try:
+                if isinstance(threshold.threshold_result, dict):
+                    threshold_result = threshold.threshold_result
+                    logger.info("Using threshold_result as dict")
+                elif isinstance(threshold.threshold_result, str):
+                    threshold_result = json.loads(threshold.threshold_result)
+                    logger.info("Successfully parsed threshold_result JSON from string")
+                else:
+                    logger.warning(f"Unexpected type for threshold_result: {type(threshold.threshold_result)}")
+            except json.JSONDecodeError:
+                logger.error("Error parsing threshold_result JSON")
+                threshold_result = {}
+        
+        # Log the current state before updates
+        logger.info(f"Before update - skills_data keys: {list(skills_data.keys())}")
+        logger.info(f"Before update - threshold_result structure: {list(threshold_result.keys()) if threshold_result else 'empty'}")
+        
+        # Update the rating for the specified item in skills_data
+        category_key = update_data.category.lower()
+        item_updated = False
+        
+        if category_key in skills_data and update_data.item_name in skills_data[category_key]:
+            skills_data[category_key][update_data.item_name]["rating"] = update_data.new_rating
+            logger.info(f"Updated rating for {update_data.item_name} in {category_key} category")
+            item_updated = True
+            
+            # Also update the "skills" category if this is from the skills dashboard
+            if category_key == "required_skills" or category_key == "skills" or update_data.category.lower() == "required skills":
+                if "skills" in skills_data and update_data.item_name in skills_data["skills"]:
+                    skills_data["skills"][update_data.item_name]["rating"] = update_data.new_rating
+                    logger.info(f"Also updated rating in skills category")
+        else:
+            logger.warning(f"Item {update_data.item_name} not found in category {category_key}")
+            # Try to find which categories exist and whether the item exists in any of them
+            for cat_key in skills_data.keys():
+                if update_data.item_name in skills_data.get(cat_key, {}):
+                    logger.info(f"Found item in alternate category: {cat_key}")
+        
+        # Update the threshold_result data structure
+        if "skills_data" in threshold_result:
+            role_key = update_data.role
+            if role_key in threshold_result["skills_data"]:
+                role_data = threshold_result["skills_data"][role_key]
+                logger.info(f"Found role {role_key} in threshold_result")
+                
+                # Update in the main category
+                if category_key in role_data and update_data.item_name in role_data[category_key]:
+                    role_data[category_key][update_data.item_name]["rating"] = update_data.new_rating
+                    logger.info(f"Updated rating in threshold_result for {category_key}")
+                    item_updated = True
+                else:
+                    logger.warning(f"Category {category_key} or item {update_data.item_name} not found in role_data")
+                    # List available categories and items
+                    for cat in role_data.keys():
+                        logger.info(f"Available category: {cat}")
+                        logger.info(f"Items in {cat}: {list(role_data[cat].keys()) if role_data[cat] else 'none'}")
+                
+                # Also update in "skills" if it exists
+                if "skills" in role_data and update_data.item_name in role_data["skills"]:
+                    role_data["skills"][update_data.item_name]["rating"] = update_data.new_rating
+                    logger.info(f"Updated rating in threshold_result skills category")
+                    item_updated = True
+            else:
+                logger.warning(f"Role {role_key} not found in threshold_result.skills_data")
+                available_roles = list(threshold_result["skills_data"].keys()) if "skills_data" in threshold_result else []
+                logger.info(f"Available roles: {available_roles}")
+        else:
+            logger.warning("skills_data key not found in threshold_result")
+            logger.info(f"threshold_result structure: {threshold_result}")
+        
+        if not item_updated:
+            logger.warning("No items were updated in either skills_data or threshold_result")
+        
+        # Save the updated data back to the database
+        job_description.required_skills = json.dumps(skills_data)
+        
+        # Make sure we store threshold_result as JSON string if it's not already
+        if isinstance(threshold_result, dict):
+            threshold.threshold_result = json.dumps(threshold_result)
+            logger.info("Stored threshold_result as JSON string")
+        else:
+            threshold.threshold_result = threshold_result
+            logger.info(f"Stored threshold_result as {type(threshold_result)}")
+        
+        # Make sure we flush changes before committing
+        db.flush()
+        db.commit()
+        logger.info(f"Successfully committed changes to database")
+        
+        return {
+            "status": "success",
+            "message": "Dashboard item updated successfully",
+            "job_id": update_data.job_id,
+            "item": update_data.item_name,
+            "new_rating": update_data.new_rating,
+            "threshold_id": threshold.threshold_id
+        }
+    except HTTPException as he:
+        db.rollback()
+        logger.error(f"HTTP Exception: {str(he)}")
+        raise he
+    except Exception as e:
+        db.rollback()
+        logger.error(f"Error updating dashboard item: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Error updating dashboard item: {str(e)}")
 
 if __name__ == "__main__":
     import uvicorn

@@ -5,9 +5,9 @@ import { ChevronDown, ChevronRight, Edit2, Trash2, Plus } from 'lucide-react';
 import { Switch } from '@mui/material';
 import { ResponsiveContainer, PieChart, Pie, BarChart, Bar, XAxis, YAxis, Cell, Tooltip } from 'recharts';
 
-const RightSidebar = ({ closeSidebar, skills_data = {} }) => {
+const RightSidebar = ({ jobId, skills_data = {}, activeTab = 'skills', initialUseRatings = true, categoryTotals = {}, closeSidebar = () => {} }) => {
   const [expandedSections, setExpandedSections] = useState({});
-  const [useRatings, setUseRatings] = useState(true);
+  const [useRatings, setUseRatings] = useState(initialUseRatings);
   const [values, setValues] = useState({});
   const [showPopup, setShowPopup] = useState({});
   const [newItemName, setNewItemName] = useState('');
@@ -16,6 +16,7 @@ const RightSidebar = ({ closeSidebar, skills_data = {} }) => {
   const [updatedSkillsData, setUpdatedSkillsData] = useState(skills_data);
   // Add this state to track recently updated items
   const [recentlyUpdated, setRecentlyUpdated] = useState({});
+  const [loading, setLoading] = useState(false);
 
   useEffect(() => {
     console.log("RightSidebar received skills_data update:", skills_data);
@@ -64,6 +65,9 @@ const RightSidebar = ({ closeSidebar, skills_data = {} }) => {
   }, [skills_data]);
 
   useEffect(() => {
+    // Initialize skills data
+    setSkillsDataState(skills_data);
+    
     return () => {
       // Cleanup any pending state updates
       setExpandedSections({});
@@ -74,7 +78,7 @@ const RightSidebar = ({ closeSidebar, skills_data = {} }) => {
       setHoveredItem(null);
       setUpdatedSkillsData(skills_data);
     };
-  }, [skills_data]);  // console.log("skills_data: ",skills_data)
+  }, [skills_data]);
 
   const COLORS = ['#3b82f6', '#10b981', '#8b5cf6', '#f59e0b', '#ec4899', '#6366f1'];
 
@@ -116,16 +120,156 @@ const RightSidebar = ({ closeSidebar, skills_data = {} }) => {
     if (!isNaN(numValue)) {
       const maxValue = useRatings ? 10 : 100;
       if (numValue >= 0 && numValue <= maxValue) {
+        // Store the new value locally without saving immediately
         setValues(prev => ({
           ...prev,
           [`${section}-${itemId}`]: {
             rating: useRatings ? numValue : data.rating,
-            importance: !useRatings ? numValue : data.importance
+            importance: !useRatings ? numValue : data.importance,
+            modified: true // Mark as modified but not saved
           }
         }));
       }
     }
   };
+
+  // Function to call the API to update the dashboard item
+  const updateDashboardItem = async (category, itemName, newValue) => {
+    try {
+      setLoading(true);
+
+      // Get the role key from skillsDataState
+      const roleKey = Object.keys(skillsDataState)[0];
+      if (!roleKey) {
+        throw new Error("No role data found");
+      }
+
+      // Prepare data for API call 
+      const updateData = {
+        role: roleKey,
+        category: category,
+        item_name: itemName,
+        new_rating: useRatings ? newValue : (skillsDataState[roleKey][category][itemName]?.rating || 5),
+        job_id: jobId // Use the jobId prop directly
+      };
+
+      // Log the data being sent
+      console.log(`Updating item ${itemName} in category ${category} with job_id ${jobId}`);
+      console.log("Update request data:", JSON.stringify(updateData));
+
+      // Call the API endpoint
+      const response = await fetch('http://127.0.0.1:8000/api/update_dashboard_item/', {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(updateData)
+      });
+
+      const responseText = await response.text();
+      console.log("Raw API response:", responseText);
+      
+      if (!response.ok) {
+        throw new Error(`API error: ${response.status} - ${responseText}`);
+      }
+      
+      let result;
+      try {
+        result = JSON.parse(responseText);
+      } catch (e) {
+        console.error("Error parsing JSON response:", e);
+        result = { status: "error", message: "Invalid JSON response" };
+      }
+      
+      console.log("Dashboard item update result:", result);
+
+      // Update the local state to reflect the change
+      const updatedSkillsData = { ...skillsDataState };
+      if (updatedSkillsData[roleKey] && updatedSkillsData[roleKey][category] && updatedSkillsData[roleKey][category][itemName]) {
+        if (useRatings) {
+          updatedSkillsData[roleKey][category][itemName].rating = newValue;
+        } else {
+          updatedSkillsData[roleKey][category][itemName].importance = newValue;
+        }
+        setSkillsDataState(updatedSkillsData);
+      }
+
+      // Mark as saved
+      setValues(prev => ({
+        ...prev,
+        [`${category}-${itemName}`]: {
+          ...prev[`${category}-${itemName}`],
+          modified: false
+        }
+      }));
+
+      return true;
+    } catch (error) {
+      console.error("Error updating dashboard item:", error);
+      alert(`Failed to update dashboard: ${error.message}`);
+      return false;
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Function to save all modified values
+  const saveAllChanges = async () => {
+    if (!confirm("Save all modified values?")) return;
+    
+    setLoading(true);
+    let allSucceeded = true;
+    const promises = [];
+    
+    for (const [key, value] of Object.entries(values)) {
+      if (value.modified) {
+        const [category, itemName] = key.split('-');
+        const newValue = useRatings ? value.rating : value.importance;
+        promises.push(updateDashboardItem(category, itemName, newValue));
+      }
+    }
+    
+    try {
+      const results = await Promise.all(promises);
+      allSucceeded = results.every(result => result === true);
+      
+      if (allSucceeded) {
+        alert("All changes saved successfully!");
+        
+        // Request fresh data to ensure UI matches database
+        try {
+          // Make a call to get the latest job description data
+          console.log(`Refreshing data for job ID: ${jobId}`);
+          const response = await fetch(`http://127.0.0.1:8000/api/job-description/${jobId}`);
+          
+          if (response.ok) {
+            const updatedJobData = await response.json();
+            // If we have a callback in parent components to update the data, use it
+            if (typeof window !== 'undefined' && window.dispatchEvent) {
+              // Dispatch a custom event to notify parent components
+              window.dispatchEvent(new CustomEvent('dashboardDataUpdated', {
+                detail: { jobId, data: updatedJobData }
+              }));
+            }
+            console.log("Successfully refreshed job data");
+          }
+        } catch (refreshError) {
+          console.error("Error refreshing job data:", refreshError);
+          // Continue with success message even if refresh fails
+        }
+      } else {
+        alert("Some changes could not be saved. Please try again.");
+      }
+    } catch (error) {
+      console.error("Error saving changes:", error);
+      alert("An error occurred while saving changes.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Check if there are any modified values
+  const hasModifiedValues = Object.values(values).some(value => value.modified);
 
   const getValue = (section, itemName, data) => {
     const storedValue = values[`${section}-${itemName}`];
@@ -231,8 +375,14 @@ const RightSidebar = ({ closeSidebar, skills_data = {} }) => {
                           step="0.1"
                           value={getValue(title, itemName, data)}
                           onChange={(e) => handleValueChange(title, itemName, e.target.value, data)}
-                          className="w-24 h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer accent-blue-500 hover:accent-blue-600"
+                          className={`w-24 h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer accent-blue-500 hover:accent-blue-600 ${
+                            loading ? 'opacity-50' : ''
+                          }`}
+                          disabled={loading}
                         />
+                        {loading && (
+                          <span className="ml-2 inline-block h-4 w-4 animate-spin rounded-full border-2 border-solid border-blue-500 border-t-transparent"></span>
+                        )}
                       </div>
                     ) : (
                       <input
@@ -240,7 +390,10 @@ const RightSidebar = ({ closeSidebar, skills_data = {} }) => {
                         value={getValue(title, itemName, data)}
                         onChange={(e) => handleValueChange(title, itemName, e.target.value, data)}
                         onFocus={(e) => e.target.select()}
-                        className="w-20 p-2 text-sm border rounded text-center focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        className={`w-20 p-2 text-sm border rounded text-center focus:outline-none focus:ring-2 focus:ring-blue-500 ${
+                          loading ? 'opacity-50' : ''
+                        }`}
+                        disabled={loading}
                       />
                     )}
                   </div>
@@ -372,6 +525,26 @@ const RightSidebar = ({ closeSidebar, skills_data = {} }) => {
           <span className="text-base text-gray-600">{useRatings ? '(0-10)' : '(0-100%)'}</span>
         </div>
       </div>
+
+      {/* Save Changes button - only visible when there are modified values */}
+      {hasModifiedValues && (
+        <div className="sticky top-0 z-10 bg-white p-3 border-b border-gray-200 shadow-sm mb-4">
+          <button
+            onClick={saveAllChanges}
+            disabled={loading}
+            className="w-full py-2 px-4 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors disabled:bg-blue-400 flex items-center justify-center"
+          >
+            {loading ? (
+              <>
+                <span className="mr-2 inline-block h-4 w-4 animate-spin rounded-full border-2 border-solid border-white border-t-transparent"></span>
+                Saving Changes...
+              </>
+            ) : (
+              'Save All Changes'
+            )}
+          </button>
+        </div>
+      )}
 
       <div className="space-y-6 overflow-y-auto">
         {renderContent()}

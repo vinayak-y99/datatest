@@ -1,5 +1,5 @@
-import React, { useState } from 'react';
-import { FaUpload, FaEyeSlash, FaTrash, FaRobot, FaEye, FaChevronLeft, FaChevronRight, FaSearch } from 'react-icons/fa';
+import React, { useState, useEffect } from 'react';
+import { FaUpload, FaEyeSlash, FaTrash, FaRobot, FaEye, FaChevronLeft, FaChevronRight, FaSearch, FaCheck } from 'react-icons/fa';
 import MovableResizablePopup from './MovableResizablePopup';
 import CS from './page';
 import DrawerNavigationJD from './DrawerNavigation'; // Note: Renamed to match the sidebar component
@@ -28,6 +28,9 @@ const JDTab = ({ jdList, setJdList, setSelectedJDForSidebar }) => {
   const [searchTerm, setSearchTerm] = useState('');
   const [hoveredRow, setHoveredRow] = useState(null);
   const [sortOrder, setSortOrder] = useState('asc');
+  const [successfulCreations, setSuccessfulCreations] = useState(new Set());
+  const [refreshTrigger, setRefreshTrigger] = useState(0);
+  const [buttonStates, setButtonStates] = useState({});
 
   const recordsPerPage = 10;
 
@@ -147,6 +150,8 @@ const JDTab = ({ jdList, setJdList, setSelectedJDForSidebar }) => {
       setSelectedJD(item);
       if (setSelectedJDForSidebar) setSelectedJDForSidebar(item);
       setIsPopupOpen(true);
+      
+      // We'll let the CS component handle the success callback
     }
   };
 
@@ -189,10 +194,57 @@ const JDTab = ({ jdList, setJdList, setSelectedJDForSidebar }) => {
     currentPage * recordsPerPage
   );
 
+  const getButtonState = (itemId) => {
+    return buttonStates[itemId] || 'default';
+  };
+
   const getDisplayButtonText = (itemId) => {
+    if (buttonStates[itemId] === 'success') return 'Created';
     if (activeDisplayId === itemId) return 'Hide';
     return displayStatus[itemId] || 'Start';
   };
+
+  const getDisplayButtonStyle = (itemId) => {
+    if (buttonStates[itemId] === 'success') {
+      return 'bg-green-500 hover:bg-green-600';
+    }
+    return activeDisplayId === itemId 
+      ? 'bg-red-500 hover:bg-red-600' 
+      : 'bg-blue-500 hover:bg-blue-600';
+  };
+
+  // This function will be passed to the CS component to handle successful creation
+  const onCreationSuccess = (itemId) => {
+    console.log("Creation successful for item:", itemId);
+    setButtonStates(prev => ({
+      ...prev,
+      [itemId]: 'success'
+    }));
+    
+    // Trigger refresh of thresholds data
+    setRefreshTrigger(prev => prev + 1);
+    
+    // Reset after 5 seconds
+    setTimeout(() => {
+      setButtonStates(prev => {
+        const newStates = {...prev};
+        delete newStates[itemId];
+        return newStates;
+      });
+    }, 5000);
+  };
+
+  // Add this effect to refresh the data when refreshTrigger changes
+  useEffect(() => {
+    if (refreshTrigger > 0) {
+      // Here you would typically fetch updated thresholds from your API
+      console.log('Refreshing thresholds data...');
+      // Example of how you might refresh data:
+      // fetchUpdatedThresholds().then(updatedData => {
+      //   setJdList(updatedData);
+      // });
+    }
+  }, [refreshTrigger]);
 
   const renderDashboard = () => (
     <div className="bg-white rounded-lg shadow-md p-4 mt-2 w-full">
@@ -334,13 +386,12 @@ const JDTab = ({ jdList, setJdList, setSelectedJDForSidebar }) => {
                     <td className="px-4 py-4 whitespace-normal text-sm text-gray-900">
                       <button
                         onClick={() => handleDisplayClick(item)}
-                        className={`px-3 py-1.5 rounded-md ${
-                          activeDisplayId === item.id 
-                            ? 'bg-red-500 hover:bg-red-600' 
-                            : 'bg-blue-500 hover:bg-blue-600'
-                        } text-white transition-colors duration-150`}
+                        className={`px-3 py-1.5 rounded-md ${getDisplayButtonStyle(item.id)} text-white transition-colors duration-150 flex items-center justify-center`}
                       >
                         {getDisplayButtonText(item.id)}
+                        {buttonStates[item.id] === 'success' && (
+                          <FaCheck className="ml-1" />
+                        )}
                       </button>
                     </td>
                   </tr>
@@ -364,7 +415,8 @@ const JDTab = ({ jdList, setJdList, setSelectedJDForSidebar }) => {
                             jdId={item.id} 
                             selectedFile={item.file} 
                             jdData={item}
-                            onClose={() => handleCloseDisplay(item.id)} 
+                            onClose={() => handleCloseDisplay(item.id)}
+                            onCreationSuccess={() => onCreationSuccess(item.id)}
                           />
                         </div>
                       </td>

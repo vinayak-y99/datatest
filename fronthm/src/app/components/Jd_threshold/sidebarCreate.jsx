@@ -388,30 +388,6 @@ const Sidebar = ({
 
     return (
         <div className="p-4 bg-white rounded-lg shadow-md">
-            <div className="mb-6">
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                    Number of Dashboards: {dashboardCount}
-                </label>
-                <input
-                    type="range"
-                    min="1"
-                    max={Math.max(10, availableDashboards.length)}
-                    value={dashboardCount}
-                    onChange={handleDashboardCountChange}
-                    className="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer"
-                />
-                <div className="flex justify-between text-xs text-gray-500 mt-1">
-                    <span>1</span>
-                    <span>{Math.max(10, availableDashboards.length)}</span>
-                </div>
-            </div>
-            <button
-                onClick={handleCreate}
-                className="w-full mb-6 py-2 px-4 bg-indigo-600 text-white rounded-md hover:bg-indigo-700 transition-colors disabled:bg-gray-400"
-                disabled={selectedRoles.length === 0 || selectedDashboards.length === 0 || isLoading}
-            >
-                {isLoading ? "Creating..." : "Create Dashboard"}
-            </button>
             <div className="mb-6 border rounded-lg p-4">
                 <label htmlFor="promptInput" className="block text-sm font-medium text-gray-700 mb-2">
                     Enter Prompt

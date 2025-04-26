@@ -93,6 +93,11 @@ export default function Threshold({ jdData = {}, jobId, jdId }) {
   const [useRatings, setUseRatings] = useState(true);
   const [availableDashboards, setAvailableDashboards] = useState([]);
   const [activeDashboard, setActiveDashboard] = useState(null);
+  const [dashboardCount, setDashboardCount] = useState(1);
+  const [isLoading, setIsLoading] = useState(false);
+  const [modifiedValues, setModifiedValues] = useState({});
+  const [savingChanges, setSavingChanges] = useState(false);
+  const [savingItems, setSavingItems] = useState({});
 
   const COLORS = ['#3b82f6', '#10b981', '#8b5cf6', '#f59e0b', '#ec4899', '#6366f1'];
 
@@ -144,6 +149,54 @@ export default function Threshold({ jdData = {}, jobId, jdId }) {
       console.log('Updated sample prompts from jdData:', jdData.apiResponse.selected_prompts);
     }
   }, [jdData]);
+
+  // Add a useEffect to listen for dashboard updates from the sidebar
+  useEffect(() => {
+    const handleDashboardDataUpdate = (event) => {
+      const { jobId: updatedJobId, data } = event.detail;
+      
+      // Make sure this is for our job
+      if ((jobId || jdData?.jobId) == updatedJobId && data) {
+        console.log(`Received dashboard update event for job ${updatedJobId}`);
+        
+        // Update skills data if required_skills is available
+        if (data.required_skills) {
+          try {
+            const parsedSkills = typeof data.required_skills === 'string' 
+              ? JSON.parse(data.required_skills)
+              : data.required_skills;
+            
+            // Update the local state
+            const updatedSkillsData = JSON.parse(JSON.stringify(skillsData));
+            const currentData = Array.isArray(updatedSkillsData[0]) ? updatedSkillsData[0][0] : updatedSkillsData[0];
+            const roleKey = Object.keys(currentData)[0];
+            
+            if (roleKey) {
+              // Update each category with fresh data
+              Object.keys(parsedSkills).forEach(category => {
+                if (currentData[roleKey][category]) {
+                  currentData[roleKey][category] = parsedSkills[category];
+                }
+              });
+              
+              // Set the updated data
+              setSkillsData(updatedSkillsData);
+            }
+          } catch (parseError) {
+            console.error("Error parsing updated skills data:", parseError);
+          }
+        }
+      }
+    };
+
+    // Add event listener
+    window.addEventListener('dashboardDataUpdated', handleDashboardDataUpdate);
+    
+    // Remove event listener on cleanup
+    return () => {
+      window.removeEventListener('dashboardDataUpdated', handleDashboardDataUpdate);
+    };
+  }, [jobId, jdData?.jobId, skillsData]);
 
   const toggleSection = (section) => {
     setExpandedSections(prev => ({...prev, [section]: !prev[section]}));
@@ -230,12 +283,80 @@ export default function Threshold({ jdData = {}, jobId, jdId }) {
     return items;
   };
 
-  const handleCreate = () => {
+  const handleCreate = async () => {
     console.log("Creating dashboard with roles:", selectedRolesForThreshold);
     console.log("Skills data available:", skillsData);
     console.log("Sample prompts available:", samplePrompts);
-    setShowDashboard(true);
-    setIsSidebarOpen(false);
+    setIsLoading(true);
+    
+    try {
+      // Get a valid numeric job ID
+      let currentJobId = 1; // Default fallback
+      
+      if (jobId !== undefined && jobId !== null) {
+        if (typeof jobId === 'number') {
+          currentJobId = jobId;
+        } else if (typeof jobId === 'string' && jobId.trim() !== '') {
+          // Try to parse as integer if it's a string
+          const parsed = parseInt(jobId);
+          if (!isNaN(parsed)) {
+            currentJobId = parsed;
+          }
+        }
+      } else if (jdData?.jobId) {
+        // Try using jobId from jdData
+        if (typeof jdData.jobId === 'number') {
+          currentJobId = jdData.jobId;
+        } else if (typeof jdData.jobId === 'string' && jdData.jobId.trim() !== '') {
+          const parsed = parseInt(jdData.jobId);
+          if (!isNaN(parsed)) {
+            currentJobId = parsed;
+          }
+        }
+      }
+      
+      console.log("Final currentJobId value:", currentJobId, "type:", typeof currentJobId);
+      
+      // Call the create_dashboards endpoint with the job_id and dashboard count
+      const response = await fetch(`http://127.0.0.1:8000/api/update_dashboards/?job_id=${currentJobId}&num_dashboards=${dashboardCount}`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          'Accept': 'application/json'
+        }
+      });
+      
+      console.log("Response status:", response.status);
+      
+      // Check for empty response
+      const responseText = await response.text();
+      console.log("Raw response:", responseText);
+      
+      let responseData = {};
+      if (responseText) {
+        try {
+          responseData = JSON.parse(responseText);
+        } catch (parseError) {
+          console.error("Error parsing response:", parseError);
+          throw new Error(`Error parsing API response: ${responseText.substring(0, 100)}...`);
+        }
+      }
+      
+      if (!response.ok) {
+        throw new Error(`API Error (${response.status}): ${response.statusText || ""}`);
+      }
+      
+      console.log("Dashboard created successfully:", responseData);
+      
+      setShowDashboard(true);
+      setIsSidebarOpen(false);
+      setIsLoading(false);
+    } catch (error) {
+      console.error("Error creating dashboard:", error);
+      // Show error message to user
+      alert(`Error creating dashboard: ${error.message}`);
+      setIsLoading(false);
+    }
   };
 
   const renderDashboardTabs = () => {
@@ -317,8 +438,14 @@ export default function Threshold({ jdData = {}, jobId, jdId }) {
                           step="0.5"
                           value={data.rating}
                           onChange={(e) => handleRatingChange(itemName, e.target.value)}
-                          className="w-24 h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer accent-blue-500 hover:accent-blue-600"
+                          className={`w-24 h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer accent-blue-500 hover:accent-blue-600 ${
+                            isLoading || savingItems[`${title}-${itemName}`] ? 'opacity-50' : ''
+                          }`}
+                          disabled={isLoading || savingItems[`${title}-${itemName}`]}
                         />
+                        {savingItems[`${title}-${itemName}`] && (
+                          <span className="ml-2 inline-block h-4 w-4 animate-spin rounded-full border-2 border-solid border-blue-500 border-t-transparent"></span>
+                        )}
                       </div>
                     ) : (
                       <span className="w-20 p-2 text-sm text-center">
@@ -383,6 +510,33 @@ export default function Threshold({ jdData = {}, jobId, jdId }) {
     );
   };
 
+  // Add this function to render a save button when changes are pending
+  const renderSaveButton = () => {
+    const hasChanges = Object.keys(modifiedValues).length > 0;
+    
+    if (!hasChanges) return null;
+    
+    return (
+      <div className="sticky top-0 z-10 bg-white p-3 mb-4 rounded-lg shadow-md">
+        <button
+          onClick={saveAllChanges}
+          disabled={savingChanges || isLoading}
+          className="w-full py-2 px-4 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors disabled:bg-blue-400 flex items-center justify-center"
+        >
+          {savingChanges ? (
+            <>
+              <span className="mr-2 inline-block h-4 w-4 animate-spin rounded-full border-2 border-solid border-white border-t-transparent"></span>
+              Saving Changes...
+            </>
+          ) : (
+            'Save All Changes'
+          )}
+        </button>
+      </div>
+    );
+  };
+
+  // Find the renderDashboardContent function and update it to include the save button
   const renderDashboardContent = () => {
     if (!skillsData || skillsData.length === 0) return null;
     
@@ -401,10 +555,14 @@ export default function Threshold({ jdData = {}, jobId, jdId }) {
       return null;
     }
     
-    return renderSection(activeDashboard, roleData[activeDashboard]);
+    return (
+      <>
+        {renderSaveButton()}
+        {renderSection(activeDashboard, roleData[activeDashboard])}
+      </>
+    );
   };
 
-    // Add this function inside the Threshold component
   const handleRatingChange = (itemName, newRating) => {
     // Create a deep copy of the skillsData
     const updatedSkillsData = JSON.parse(JSON.stringify(skillsData));
@@ -421,8 +579,177 @@ export default function Threshold({ jdData = {}, jobId, jdId }) {
     
     // Update the rating for the specific item in the active dashboard
     if (roleData[activeDashboard] && roleData[activeDashboard][itemName]) {
-      roleData[activeDashboard][itemName].rating = parseFloat(newRating);
+      const newRatingValue = parseFloat(newRating);
+      
+      // Don't update if the value is the same
+      if (roleData[activeDashboard][itemName].rating === newRatingValue) return;
+      
+      // Immediate UI update for responsiveness
+      roleData[activeDashboard][itemName].rating = newRatingValue;
       setSkillsData(updatedSkillsData);
+      
+      // Track modified values
+      setModifiedValues(prev => ({
+        ...prev,
+        [`${activeDashboard}-${itemName}`]: {
+          roleKey,
+          category: activeDashboard,
+          itemName,
+          newValue: newRatingValue,
+          originalValue: roleData[activeDashboard][itemName].rating
+        }
+      }));
+    }
+  };
+  
+  // Function to save all modified values
+  const saveAllChanges = async () => {
+    if (!confirm("Save all changes to the database?")) return;
+    
+    setSavingChanges(true);
+    let allSucceeded = true;
+    
+    try {
+      // Save each modified value one by one
+      for (const [key, item] of Object.entries(modifiedValues)) {
+        try {
+          await updateDashboardItem(
+            item.roleKey,
+            item.category,
+            item.itemName,
+            item.newValue
+          );
+        } catch (error) {
+          console.error(`Failed to save ${key}:`, error);
+          allSucceeded = false;
+        }
+      }
+      
+      if (allSucceeded) {
+        alert("All changes saved successfully!");
+        
+        // Request fresh data to ensure UI matches database
+        try {
+          // Make a call to get the latest job description data
+          console.log(`Refreshing data for job ID: ${jobId || jdData?.jobId}`);
+          const response = await fetch(`http://127.0.0.1:8000/api/job-description/${jobId || jdData?.jobId}`);
+          
+          if (response.ok) {
+            const updatedJobData = await response.json();
+            
+            // Update local skills data if required_skills is available
+            if (updatedJobData.required_skills) {
+              try {
+                const parsedSkills = typeof updatedJobData.required_skills === 'string' 
+                  ? JSON.parse(updatedJobData.required_skills)
+                  : updatedJobData.required_skills;
+                
+                // Update the local state
+                const updatedSkillsData = JSON.parse(JSON.stringify(skillsData));
+                const currentData = Array.isArray(updatedSkillsData[0]) ? updatedSkillsData[0][0] : updatedSkillsData[0];
+                const roleKey = Object.keys(currentData)[0];
+                
+                if (roleKey) {
+                  // Update each category with fresh data
+                  Object.keys(parsedSkills).forEach(category => {
+                    if (currentData[roleKey][category]) {
+                      currentData[roleKey][category] = parsedSkills[category];
+                    }
+                  });
+                  
+                  // Set the updated data
+                  setSkillsData(updatedSkillsData);
+                }
+              } catch (parseError) {
+                console.error("Error parsing updated skills data:", parseError);
+              }
+            }
+            
+            console.log("Successfully refreshed job data");
+          }
+        } catch (refreshError) {
+          console.error("Error refreshing job data:", refreshError);
+          // Continue with success message even if refresh fails
+        }
+        
+        // Clear modified values
+        setModifiedValues({});
+      } else {
+        alert("Some changes couldn't be saved. Please try again.");
+      }
+    } catch (error) {
+      console.error("Error during save operation:", error);
+      alert("An error occurred while saving changes.");
+    } finally {
+      setSavingChanges(false);
+    }
+  };
+  
+  // Function to call the API to update dashboard item
+  const updateDashboardItem = async (roleKey, category, itemName, newRating) => {
+    // Mark this specific item as saving
+    setSavingItems(prev => ({
+      ...prev,
+      [`${category}-${itemName}`]: true
+    }));
+    
+    try {
+      setIsLoading(true); // Show global loading state
+      
+      // Prepare data for API call
+      const updateData = {
+        role: roleKey,
+        category: category,
+        item_name: itemName,
+        new_rating: newRating,
+        job_id: jobId || jdData?.jobId
+      };
+      
+      console.log("Sending update request:", updateData);
+      
+      // Call the API endpoint
+      const response = await fetch('http://127.0.0.1:8000/api/update_dashboard_item/', {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(updateData)
+      });
+      
+      const responseText = await response.text();
+      console.log("Raw API response:", responseText);
+      
+      if (!response.ok) {
+        throw new Error(`API error: ${response.status} - ${responseText}`);
+      }
+      
+      let result;
+      try {
+        result = JSON.parse(responseText);
+      } catch (e) {
+        console.error("Error parsing JSON response:", e);
+        result = { status: "error", message: "Invalid JSON response" };
+      }
+      
+      console.log("Dashboard item update result:", result);
+      
+    } catch (error) {
+      console.error("Error updating dashboard item:", error);
+      alert(`Failed to update dashboard: ${error.message}`);
+      
+      // Reload data to ensure consistency
+      if (handleDashboardUpdate) {
+        handleDashboardUpdate(skillsData);
+      }
+      throw error; // Re-throw to handle in the calling function
+    } finally {
+      // Mark this specific item as no longer saving
+      setSavingItems(prev => {
+        const newState = {...prev};
+        delete newState[`${category}-${itemName}`];
+        return newState;
+      });
+      setIsLoading(false);
     }
   };
 
@@ -471,9 +798,36 @@ export default function Threshold({ jdData = {}, jobId, jdId }) {
                           <h2 className="text-2xl font-semibold text-gray-800">
                             {selectedRolesForThreshold.length > 0 ? selectedRolesForThreshold[0] : 'Threshold Score'}
                           </h2>
-                          <div className="flex items-center gap-4">
-                            <div className="flex items-center gap-2">
-                              <span className="text-base text-gray-600">
+                          <div className="flex items-center space-x-4">
+                            <div className="flex items-center">
+                              <span className="text-sm font-medium text-gray-700 whitespace-nowrap mr-2">
+                                Number of Dashboards:
+                              </span>
+                              <span className="text-sm font-semibold text-indigo-600 w-5 text-center mr-1">
+                                {dashboardCount}
+                              </span>
+                              <input
+                                type="range"
+                                min="1"
+                                max={Math.max(10, availableDashboards.length)}
+                                value={dashboardCount}
+                                onChange={(e) => {
+                                  const count = parseInt(e.target.value);
+                                  setDashboardCount(count);
+                                  handleSendRangeValue(count);
+                                }}
+                                className="w-24 h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer mr-3"
+                              />
+                              <button
+                                onClick={handleCreate}
+                                className="py-1 px-3 text-sm bg-indigo-600 text-white rounded-md hover:bg-indigo-700 transition-colors disabled:bg-gray-400"
+                                disabled={selectedRolesForThreshold.length === 0 || isLoading}
+                              >
+                                {isLoading ? "Creating..." : "Create"}
+                              </button>
+                            </div>
+                            <div className="flex items-center border-l pl-4 ml-1">
+                              <span className="text-sm text-gray-600 mr-2">
                                 {useRatings ? 'Ratings (0-10)' : 'Importance (0-100%)'}
                               </span>
                               <button 
@@ -499,7 +853,7 @@ export default function Threshold({ jdData = {}, jobId, jdId }) {
 
                   {!showProjectdashboard && (
                     <div className="flex justify-center items-center h-64 text-gray-400">
-                      Select a role and click "Create Dashboard" to get started
+                      Select a role and click "Create" to generate your dashboard
                     </div>
                   )}
                 </div>

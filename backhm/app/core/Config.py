@@ -19,8 +19,8 @@ class Settings(BaseSettings):
     
     BASE_DIR: Path = Path(__file__).resolve().parent.parent.parent
     UPLOAD_DIR: Path = BASE_DIR / "uploads"
-    GOOGLE_API_KEY: str = "AIzaSyAWu-oajX5ufwmSCKlwYJyCtZZnW8MOfbg"
-    MODEL_NAME: str = "gemini-1.5-pro" 
+    GOOGLE_API_KEY: str = "AIzaSyDXXomexI2M32dW7RGp8qgLucoLqNXyF20"
+    MODEL_NAME: str = "gemini-2.0-flash" 
     MODEL_TEMPERATURE: float = 0.2
 
     # JD Analysis Constants

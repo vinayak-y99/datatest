@@ -229,7 +229,6 @@ const IsolatedRow = React.memo(({ item, ...props }) => {
   
   return (
     <TableRow
-      key={`row-${item.id}`}
       item={item}
       {...props}
     />
@@ -303,7 +302,7 @@ const JDTab = ({ jdList, setJdList, setSelectedJDForSidebar }) => {
         console.log("Fetched all job analyses:", response.data);
         
         // Transform the API response to match your jdList format
-        const transformedData = response.data.map(item => {
+        const transformedData = response.data.map((item, index) => {
           // Check different possible locations for threshold result data
           const formatted_data = item.formatted_data || {};
           const skills_data = formatted_data.skills_data || item.skills_data || {};
@@ -314,12 +313,15 @@ const JDTab = ({ jdList, setJdList, setSelectedJDForSidebar }) => {
                                    Object.values(skills_data).every(val => 
                                      !val || Object.keys(val).length === 0);
           
+          // Ensure each item has a unique ID by using a fallback to index if nothing exists
+          const uniqueId = item.database_id || item.job_id || index.toString();
+          
           return {
-            id: item.database_id,
-            job_id: item.job_id || item.data?.job_id || item.fullData?.job_id || null,
-            role: item.roles[0] || 'Unknown Role',
+            id: uniqueId,
+            job_id: item.job_id || item.data?.job_id || item.fullData?.job_id || uniqueId,
+            role: item.roles && item.roles.length > 0 ? item.roles[0] : 'Unknown Role',
             skills: item.skills_data,
-            fileName: `Job Description ${item.database_id}`,
+            fileName: `Job Description ${uniqueId}`,
             uploadDate: new Date().toLocaleDateString(),
             status: hasEmptyThreshold ? 'Incomplete' : 'Success',
             threshold: 'View',
@@ -328,8 +330,8 @@ const JDTab = ({ jdList, setJdList, setSelectedJDForSidebar }) => {
             hasEmptyThreshold,
             fullData: {
               ...item,
-              roles: item.roles,
-              skills_data: item.skills_data
+              roles: item.roles || [],
+              skills_data: item.skills_data || {}
             }
           };
         });
@@ -1036,9 +1038,9 @@ const JDTab = ({ jdList, setJdList, setSelectedJDForSidebar }) => {
               </tr>
             </thead>
             <tbody className="bg-white divide-y divide-gray-200">
-              {paginatedList.map((item) => (
+              {paginatedList.map((item, index) => (
                 <IsolatedRow
-                  key={`isolated-${item.id}`}
+                  key={`isolated-${item.id || item.job_id || item.database_id || index}`}
                   item={item}
                   expandedRowId={expandedRowId}
                   onToggleExpand={handleRowToggle}
