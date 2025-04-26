@@ -119,10 +119,14 @@ const HRSystem = ({ onMinimize, onUpdate }) => (
   </div>
 );
 
-export default function Threshold({ jdData = {} }) {
-  // Debug the incoming jdData
+export default function Threshold({ jdData = {}, jdId, thresholdId, onDataChange, onClose }) {
+  // Debug the incoming props
   console.log('Threshold component received jdData:', jdData);
+  console.log('Threshold component props - jdId:', jdId, 'thresholdId:', thresholdId);
   console.log('Sample prompts received in Threshold:', jdData?.apiResponse?.selected_prompts);
+
+  // State for tracking whether we've fetched custom prompts
+  const [hasLoadedCustomPrompts, setHasLoadedCustomPrompts] = useState(false);
 
   const [roles, setRoles] = useState(() => {
     const rolesData = jdData?.apiResponse?.roles;
@@ -243,36 +247,83 @@ export default function Threshold({ jdData = {} }) {
   const [selectedRolesForThreshold, setSelectedRolesForThreshold] = useState([]);
 
   useEffect(() => {
-  if (jdData?.apiResponse) {
-    setRoles(jdData.apiResponse.roles || []);
-    setSkillsData([Array.isArray(jdData.apiResponse.skills_data)
-      ? jdData.apiResponse.skills_data
-      : [jdData.apiResponse.skills_data || {}]]);
-    
-    // Make sure we're setting an array for sample prompts
-    if (Array.isArray(jdData.apiResponse.selected_prompts)) {
-      setSamplePrompts(jdData.apiResponse.selected_prompts);
-    } else if (typeof jdData.apiResponse.selected_prompts === 'string') {
-      // If it's a string, convert it to an array with one item
-      setSamplePrompts([jdData.apiResponse.selected_prompts]);
-    } else {
-      // Generate default prompts
-      const role = jdData.apiResponse.roles?.[0] || "the role";
-      const skills = Object.keys(jdData.apiResponse.skills_data || {}).slice(0, 5).join(", ");
+    if (jdData?.apiResponse) {
+      setRoles(jdData.apiResponse.roles || []);
+      setSkillsData([Array.isArray(jdData.apiResponse.skills_data)
+        ? jdData.apiResponse.skills_data
+        : [jdData.apiResponse.skills_data || {}]]);
       
-      setSamplePrompts([
-        `I am applying for ${role} position. Here's my resume: [PASTE RESUME]. How well do I match the requirements?`,
-        `I have experience in ${skills}. Can you help me tailor my resume for the ${role} position?`,
-        `What specific achievements should I highlight in my cover letter for the ${role} position?`,
-        `Based on the job description for ${role}, what questions might I be asked in an interview?`,
-        `How can I demonstrate my expertise in ${skills} during an interview for the ${role} position?`
-      ]);
+      // Make sure we're setting an array for sample prompts
+      if (Array.isArray(jdData.apiResponse.selected_prompts)) {
+        setSamplePrompts(jdData.apiResponse.selected_prompts);
+      } else if (typeof jdData.apiResponse.selected_prompts === 'string') {
+        // If it's a string, convert it to an array with one item
+        setSamplePrompts([jdData.apiResponse.selected_prompts]);
+      } else {
+        // Generate default prompts
+        const role = jdData.apiResponse.roles?.[0] || "the role";
+        const skills = Object.keys(jdData.apiResponse.skills_data || {}).slice(0, 5).join(", ");
+        
+        setSamplePrompts([
+          `I am applying for ${role} position. Here's my resume: [PASTE RESUME]. How well do I match the requirements?`,
+          `I have experience in ${skills}. Can you help me tailor my resume for the ${role} position?`,
+          `What specific achievements should I highlight in my cover letter for the ${role} position?`,
+          `Based on the job description for ${role}, what questions might I be asked in an interview?`,
+          `How can I demonstrate my expertise in ${skills} during an interview for the ${role} position?`
+        ]);
+      }
+      
+      console.log('Updated sample prompts from jdData:', jdData.apiResponse.selected_prompts);
     }
-    
-    console.log('Updated sample prompts from jdData:', jdData.apiResponse.selected_prompts);
-  }
-}, [jdData]);
+  }, [jdData]);
 
+  // Add a useEffect to fetch sample prompts specific to this threshold ID
+  useEffect(() => {
+    // Only fetch if we have a threshold ID and haven't loaded custom prompts yet
+    if (thresholdId && !hasLoadedCustomPrompts) {
+      const fetchCustomPrompts = async () => {
+        try {
+          console.log(`Fetching custom prompts for threshold ID: ${thresholdId}`);
+          
+          const response = await fetch('/api/jd/sample-prompts', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({ 
+              threshold_id: parseInt(thresholdId)
+            }),
+          });
+          
+          if (!response.ok) {
+            throw new Error(`Failed to fetch custom prompts: ${response.status}`);
+          }
+          
+          const data = await response.json();
+          console.log('Received custom prompts:', data);
+          
+          // Check if we got custom prompts and update state
+          if (data.sample_prompts) {
+            setSamplePrompts(data.sample_prompts);
+            
+            // If we're using the onDataChange callback, also update parent component
+            if (onDataChange) {
+              onDataChange({
+                selected_prompts: data.sample_prompts
+              });
+            }
+            
+            // Mark that we've loaded custom prompts
+            setHasLoadedCustomPrompts(true);
+          }
+        } catch (error) {
+          console.error('Error fetching custom prompts:', error);
+        }
+      };
+      
+      fetchCustomPrompts();
+    }
+  }, [thresholdId, hasLoadedCustomPrompts, onDataChange]);
 
   const handleSelectedRoles = (roles) => {
     // console.log("Page received selected roles:", roles);

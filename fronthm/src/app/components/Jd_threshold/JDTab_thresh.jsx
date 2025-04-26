@@ -316,6 +316,13 @@ const JDTab = ({ jdList, setJdList, setSelectedJDForSidebar }) => {
           // Ensure each item has a unique ID by using a fallback to index if nothing exists
           const uniqueId = item.database_id || item.job_id || index.toString();
           
+          // Get threshold values from response, logging them for debugging
+          const selection_threshold = item.selection_threshold !== undefined ? item.selection_threshold : 0;
+          const rejection_threshold = item.rejection_threshold !== undefined ? item.rejection_threshold : 0;
+          
+          // Log the exact values for debugging
+          console.log(`Job ${uniqueId} thresholds - Selection: ${selection_threshold}, Rejection: ${rejection_threshold}`);
+          
           return {
             id: uniqueId,
             job_id: item.job_id || item.data?.job_id || item.fullData?.job_id || uniqueId,
@@ -325,15 +332,23 @@ const JDTab = ({ jdList, setJdList, setSelectedJDForSidebar }) => {
             uploadDate: new Date().toLocaleDateString(),
             status: hasEmptyThreshold ? 'Incomplete' : 'Success',
             threshold: 'View',
-            matchScore: item.selection_threshold?.toFixed(2) || 0,
-            relevanceScore: item.rejection_threshold?.toFixed(2) || 0,
+            matchScore: selection_threshold.toFixed(2) || '0.00',
+            relevanceScore: rejection_threshold.toFixed(2) || '0.00',
             hasEmptyThreshold,
             fullData: {
               ...item,
               roles: item.roles || [],
-              skills_data: item.skills_data || {}
+              skills_data: item.skills_data || {},
+              selection_threshold: selection_threshold,
+              rejection_threshold: rejection_threshold
             }
           };
+        });
+        
+        // Log a few transformed items with their threshold values
+        console.log("First few transformed items:");
+        transformedData.slice(0, 3).forEach(item => {
+          console.log(`Item ${item.id}: matchScore=${item.matchScore}, relevanceScore=${item.relevanceScore}`);
         });
         
         setJdList(transformedData);
@@ -844,10 +859,31 @@ const JDTab = ({ jdList, setJdList, setSelectedJDForSidebar }) => {
         throw new Error("Job ID not found");
       }
       
+      // First try to get the threshold ID associated with this job ID
+      let thresholdId;
+      try {
+        console.log(`Fetching threshold ID for job ID: ${jobId}`);
+        const thresholdResponse = await axios.get(`/api/threshold-ids?job_id=${jobId}`);
+        
+        if (thresholdResponse.data && Array.isArray(thresholdResponse.data) && 
+            thresholdResponse.data.length > 0 && thresholdResponse.data[0].threshold_id) {
+          thresholdId = thresholdResponse.data[0].threshold_id;
+          console.log(`Found threshold ID: ${thresholdId} for job ID: ${jobId}`);
+        } else if (thresholdResponse.data && thresholdResponse.data.threshold_id) {
+          thresholdId = thresholdResponse.data.threshold_id;
+          console.log(`Found threshold ID: ${thresholdId} for job ID: ${jobId}`);
+        }
+      } catch (error) {
+        console.warn(`Failed to get threshold ID for job ID ${jobId}:`, error);
+        // Continue with job ID as fallback
+      }
+      
       // Make API call to create default dashboards
       const dashboardCount = 3; // Default number of dashboards to create
       
-      console.log(`Creating ${dashboardCount} dashboards for job ID: ${jobId}`);
+      // If we found a threshold ID, use it; otherwise fall back to job ID
+      const idToUse = thresholdId || jobId;
+      console.log(`Creating ${dashboardCount} dashboards for ${thresholdId ? 'threshold' : 'job'} ID: ${idToUse}`);
       
       // Call the update_dashboards endpoint
       const response = await axios.put(
@@ -856,13 +892,14 @@ const JDTab = ({ jdList, setJdList, setSelectedJDForSidebar }) => {
         { 
           params: { 
             job_id: jobId,
+            threshold_id: thresholdId, // Add threshold_id to the parameters
             num_dashboards: dashboardCount
           } 
         }
       );
       
       if (response.data) {
-        console.log("Dashboards created successfully:", response.data);
+        console.log("FULL DASHBOARD RESPONSE:", JSON.stringify(response.data, null, 2));
         
         // Keep track of the item ID
         const itemId = item.id;
@@ -874,29 +911,78 @@ const JDTab = ({ jdList, setJdList, setSelectedJDForSidebar }) => {
         const skills_data = response.data.skills_data || {};
         const roles = response.data.roles || [];
         
-        console.log("Received dashboard data:", {
-          skills_data,
-          roles
+        // Try multiple potential sources for threshold values
+        let selection_threshold = null;
+        let rejection_threshold = null;
+        
+        // Check for values using different potential property names
+        if (response.data.selection_threshold !== undefined) {
+          selection_threshold = response.data.selection_threshold;
+          console.log("Found selection_threshold in response:", selection_threshold);
+        } else if (response.data.matchScore !== undefined) {
+          selection_threshold = response.data.matchScore;
+          console.log("Found matchScore in response:", selection_threshold);
+        } else if (response.data.data && response.data.data.selection_threshold !== undefined) {
+          selection_threshold = response.data.data.selection_threshold;
+          console.log("Found selection_threshold in response.data:", selection_threshold);
+        }
+        
+        if (response.data.rejection_threshold !== undefined) {
+          rejection_threshold = response.data.rejection_threshold;
+          console.log("Found rejection_threshold in response:", rejection_threshold);
+        } else if (response.data.relevanceScore !== undefined) {
+          rejection_threshold = response.data.relevanceScore;
+          console.log("Found relevanceScore in response:", rejection_threshold);
+        } else if (response.data.data && response.data.data.rejection_threshold !== undefined) {
+          rejection_threshold = response.data.data.rejection_threshold;
+          console.log("Found rejection_threshold in response.data:", rejection_threshold);
+        }
+        
+        // Default values if nothing is found
+        selection_threshold = selection_threshold !== null ? selection_threshold : 0.75;
+        rejection_threshold = rejection_threshold !== null ? rejection_threshold : 0.25;
+        
+        // Ensure values are in the correct format (between 0 and 1)
+        if (selection_threshold > 1) selection_threshold = selection_threshold / 100.0;
+        if (rejection_threshold > 1) rejection_threshold = rejection_threshold / 100.0;
+        
+        console.log("Final threshold values to be used:", {
+          selection_threshold,
+          rejection_threshold
         });
         
         // Update just this item in the list with the response data
         setJdList(currentList => {
           return currentList.map(jd => {
             if (jd.id === itemId) {
-              // Create updated job item
-              return {
+              // Create updated job item with the threshold values from the API
+              const updatedItem = {
                 ...jd,
                 hasEmptyThreshold: false,
                 status: 'Success',
                 skills: skills_data,
                 role: roles[0] || jd.role,
+                threshold_id: thresholdId, // Store threshold_id in the list item
+                matchScore: selection_threshold.toFixed(2), // Use the threshold from API
+                relevanceScore: rejection_threshold.toFixed(2), // Use the threshold from API
                 fullData: {
                   ...jd.fullData,
                   ...response.data,
                   roles: roles,
-                  skills_data: skills_data
+                  skills_data: skills_data,
+                  threshold_id: thresholdId,
+                  selection_threshold: selection_threshold,
+                  rejection_threshold: rejection_threshold
                 }
               };
+              
+              console.log("Updated item with thresholds:", {
+                id: updatedItem.id,
+                matchScore: updatedItem.matchScore,
+                relevanceScore: updatedItem.relevanceScore
+              });
+              
+              return updatedItem;
             }
             return jd;
           });
@@ -1094,6 +1180,7 @@ const JDTab = ({ jdList, setJdList, setSelectedJDForSidebar }) => {
         <DrawerNavigationJD
           selectedJd={selectedJD}
           jobId={selectedJD.job_id}
+          thresholdId={selectedJD.id}
           onClose={handleDrawerClose}
         />
       )}

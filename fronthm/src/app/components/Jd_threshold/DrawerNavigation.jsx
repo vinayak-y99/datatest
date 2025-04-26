@@ -2,7 +2,7 @@
 import { useState, useRef, useEffect } from 'react';
 import JDPage from './page2'; // Ensure this path is correct to your JDPage component
 
-const DrawerNavigationJD = ({ selectedJd, onClose }) => {
+const DrawerNavigationJD = ({ selectedJd, jobId, thresholdId, onClose }) => {
   const [isMaximized, setIsMaximized] = useState(false);
   const drawerRef = useRef(null);
   const [drawerWidth, setDrawerWidth] = useState(window.innerWidth * 0.6);
@@ -15,8 +15,9 @@ const DrawerNavigationJD = ({ selectedJd, onClose }) => {
   const [currentData, setCurrentData] = useState(null);
   const [showConfirmation, setShowConfirmation] = useState(false);
   
-  // Extract job ID at component level so it can be used in multiple functions
-  const jobId = selectedJd?.id || selectedJd?.job_id || selectedJd?.jobId || selectedJd?.database_id;
+  // Extract IDs at component level so they can be used in multiple functions
+  const resolvedJobId = jobId || selectedJd?.job_id || selectedJd?.jobId || selectedJd?.database_id;
+  const resolvedThresholdId = thresholdId || selectedJd?.id || selectedJd?.database_id;
 
   // Initialize original data when component mounts
   useEffect(() => {
@@ -96,7 +97,7 @@ const DrawerNavigationJD = ({ selectedJd, onClose }) => {
   const handleUpdateThresholds = async () => {
     setShowConfirmation(false);
     
-    if (!selectedJd || !jobId) {
+    if (!selectedJd || !resolvedJobId) {
       console.error("Selected JD data:", selectedJd);
       setUpdateMessage('Error: No job selected or invalid job ID');
       return;
@@ -114,7 +115,7 @@ const DrawerNavigationJD = ({ selectedJd, onClose }) => {
       };
       
       const apiBaseUrl = "http://127.0.0.1:8000";
-      const apiUrl = `${apiBaseUrl}/api/threshold-scores/${jobId}`;
+      const apiUrl = `${apiBaseUrl}/api/threshold-scores/${resolvedJobId}`;
       console.log("Calling API endpoint:", apiUrl);
       
       const response = await fetch(apiUrl, {
@@ -272,7 +273,8 @@ const DrawerNavigationJD = ({ selectedJd, onClose }) => {
         <div className="overflow-auto p-4 h-[calc(100%-64px)]">
           {selectedJd && (
             <JDPage 
-              jdId={selectedJd?.id || selectedJd?.job_id || selectedJd?.jobId || selectedJd?.database_id}
+              jdId={resolvedJobId}
+              thresholdId={resolvedThresholdId}
               selectedFile={selectedJd.file} 
               jdData={selectedJd}
               onClose={onClose}

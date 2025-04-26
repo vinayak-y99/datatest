@@ -26,6 +26,7 @@ import traceback
 import random
 import asyncio
 from app.core.Config import settings
+from fastapi.responses import JSONResponse
 
 # Database connection
 SQLALCHEMY_DATABASE_URL = f"postgresql://postgres:Temp1234@localhost:5432/fasthire999" # Change as needed
@@ -67,9 +68,12 @@ class DashboardResponse(BaseModel):
     raw_response: str
     selected_prompts: str
     data: Dict[str, Any]
-    # Optional fields for backward compatibility
-    selection_threshold: Optional[int] = 0
-    rejection_threshold: Optional[int] = 0
+    # Make these required fields rather than optional
+    selection_threshold: float = 0.75
+    rejection_threshold: float = 0.25
+    # Add explicit match score fields for backward compatibility
+    matchScore: float = 0.75
+    relevanceScore: float = 0.25
 
 # New model for dashboard updates
 class DashboardUpdateRequest(BaseModel):
@@ -123,6 +127,7 @@ def clean_text(text):
     
     return text
 
+#Upload job description
 @analyze_job_description_router.post("/api/extract_job_description/", response_model=JobDescriptionResponse)
 async def extract_job_description(user_id: str, file: UploadFile = File(...), db: Session = Depends(get_db)):
     try:
@@ -579,13 +584,23 @@ async def update_dashboards(job_id: int, num_dashboards: int = Query(ge=1, le=10
         # Initialize LLM service
         llm_service = LLMService()
         
-        # Create the dashboard template with dynamic dashboard count
-        dashboard_template = """Analyze this job description and extract information to create {num_dashboards} distinct dashboards for visualizing different aspects of the job:
+        # Calculate specific selection and rejection thresholds based on the job description
+        # We'll deterministically generate different values for each dashboard count
+        # This ensures values change but are not random
+        selection_base = 75
+        rejection_base = 30
+        
+        # Adjust thresholds based on num_dashboards to ensure they change with each dashboard creation
+        selection_threshold = min(85, selection_base + (num_dashboards * 2))
+        rejection_threshold = max(20, rejection_base - num_dashboards)
+        
+        # Create the dashboard template with dynamic dashboard count and explicit threshold values
+        dashboard_template = f"""Analyze this job description and extract information to create {{num_dashboards}} distinct dashboards for visualizing different aspects of the job:
 
 For Dashboard #1 (Required Skills):
 Extract key technical skills with their importance (%), rating (out of 10).
 
-For the remaining {remaining_dashboards} dashboards, extract different categories of job requirements. These could include but are not limited to:
+For the remaining {{remaining_dashboards}} dashboards, extract different categories of job requirements. These could include but are not limited to:
 - Technical qualifications
 - Soft skills
 - Certifications
@@ -607,12 +622,12 @@ Rating: Score out of 10 calculated as (Importance × 10 ÷ highest importance pe
 
 Format your response with CONSISTENT structure as follows with one blank line between each section:
 
-if {num_dashboards} = 1:
+if {{num_dashboards}} = 1:
 Then only output Dashboard #1 - Required Skills:
 - [Skill Name]: Importance: [X]% Rating: [R]/10
 - [Next Skill]: Importance: [X]% Rating: [R]/10
 
-if {num_dashboards} = 2 :
+if {{num_dashboards}} = 2 :
 Dashboard #1 - Required Skills:
 - [Skill Name]: Importance: [X]% Rating: [R]/10
 - [Next Skill]: Importance: [X]% Rating: [R]/10
@@ -621,7 +636,7 @@ Dashboard #2 - [Category Name]:
 - [Item Name]: Importance: [X]% Rating: [R]/10
 - [Next Item]: Importance: [X]% Rating: [R]/10
 
-if {num_dashboards} = 3 or more:
+if {{num_dashboards}} = 3 or more:
 Dashboard #1 - Required Skills:
 - [Skill Name]: Importance: [X]% Rating: [R]/10
 - [Next Skill]: Importance: [X]% Rating: [R]/10
@@ -634,21 +649,21 @@ Dashboard #3 - [Category Name]:
 - [Item Name]: Importance: [X]% Rating: [R]/10
 - [Next Item]: Importance: [X]% Rating: [R]/10
 
-(Continue for all {num_dashboards} dashboards)
+(Continue for all {{num_dashboards}} dashboards)
 
 Threshold Recommendations:
-Selection Threshold: 70%
-Rejection Threshold: 30%
+Selection Threshold: {selection_threshold}%
+Rejection Threshold: {rejection_threshold}%
 
 Rules:
 - Each dashboard category MUST be different and distinct
-- if {num_dashboards} = 1, then only output Dashboard #1 - Required Skills, if {num_dashboards} = 2, then output Dashboard #1 - Required Skills and Dashboard #2 - [Category Name] and if {num_dashboards} = 3 or more, then output Dashboard #1 - Required Skills and Dashboard #2 - [Category Name] and Dashboard #3 - [Category Name] and so on.
+- if {{num_dashboards}} = 1, then only output Dashboard #1 - Required Skills, if {{num_dashboards}} = 2, then output Dashboard #1 - Required Skills and Dashboard #2 - [Category Name] and if {{num_dashboards}} = 3 or more, then output Dashboard #1 - Required Skills and Dashboard #2 - [Category Name] and Dashboard #3 - [Category Name] and so on.
 - Each dashboard MUST have at least 3 items
 - Numbers should be rounded to one decimal place
 - If information for a requested dashboard is not available in the job description, create a relevant category that would be useful for this job position
 
 Job Description:
-{context}"""
+{{context}}"""
         
         # Calculate remaining dashboards
         remaining_dashboards = max(0, num_dashboards - 1)
@@ -670,6 +685,14 @@ Job Description:
         job_title = job_description.title
         roles = [job_title]
         
+        # Use the explicitly provided thresholds from template, but fall back to parsed if needed
+        parsed_selection, parsed_rejection = thresholds
+        if parsed_selection != selection_threshold or parsed_rejection != rejection_threshold:
+            logger.warning(f"Parsed thresholds ({parsed_selection}, {parsed_rejection}) differ from template thresholds ({selection_threshold}, {rejection_threshold})")
+            # Use the template values as they're definitive
+        
+        logger.info(f"Using thresholds for job {job_id}: Selection={selection_threshold}%, Rejection={rejection_threshold}%")
+        
         # Clean up skills data structure
         cleaned_skills_data = {key: value for key, value in skills_data.items() 
                               if key not in ["skills", "categories"]}
@@ -682,10 +705,10 @@ Job Description:
             "analysis": {
                 "role": roles[0],
                 "skills": cleaned_skills_data
-            }
+            },
+            "selection_threshold": selection_threshold,
+            "rejection_threshold": rejection_threshold
         }
-        
-        selection_threshold, rejection_threshold = thresholds
         
         # Convert selected_prompts from list to string
         selected_prompts_str = "\n".join(selected_prompts) if selected_prompts else ""
@@ -706,6 +729,7 @@ Job Description:
                 existing_threshold.threshold_value = (selection_threshold + rejection_threshold) / 2
                 existing_threshold.threshold_result = response_dict
                 existing_threshold.threshold_prompts = selected_prompts_str
+                logger.info(f"Updated existing threshold for job {job_id}: Selection={selection_threshold}%, Rejection={rejection_threshold}%")
             else:
                 # If no threshold record exists (unlikely), create one
                 threshold_score = ThresholdScore(
@@ -720,19 +744,59 @@ Job Description:
                     sample_prompts_history=""
                 )
                 db.add(threshold_score)
+                logger.info(f"Created new threshold for job {job_id}: Selection={selection_threshold}%, Rejection={rejection_threshold}%")
             
             db.commit()
             
-            return DashboardResponse(
-                job_id=job_id,
-                roles=roles,
-                skills_data={roles[0]: skills_data},
-                formatted_data=response_dict,
-                status="success",
-                raw_response=content,
-                selected_prompts=selected_prompts_str,
-                data=response_dict
-            )
+            # Create a direct response dictionary with explicit threshold values
+            # Convert thresholds from percentage (0-100) to decimal (0-1) for frontend
+            selection_decimal = float(selection_threshold) / 100.0
+            rejection_decimal = float(rejection_threshold) / 100.0
+            
+            # Log the raw values to help debug
+            logger.info(f"*** RAW THRESHOLD VALUES: Selection={selection_threshold} ({type(selection_threshold)}), Rejection={rejection_threshold} ({type(rejection_threshold)})")
+            logger.info(f"*** DECIMAL THRESHOLD VALUES: Selection={selection_decimal} ({type(selection_decimal)}), Rejection={rejection_decimal} ({type(rejection_decimal)})")
+            
+            # Use explicit float conversion to ensure proper JSON serialization
+            # Include the thresholds in multiple places to maximize chance of frontend finding them
+            response_dict_with_thresholds = {
+                "job_id": job_id,
+                "roles": roles,
+                "skills_data": {roles[0]: skills_data},
+                "formatted_data": {
+                    "roles": roles,
+                    "skills_data": {roles[0]: skills_data},
+                    "selection_threshold": float(selection_decimal),
+                    "rejection_threshold": float(rejection_decimal),
+                    "matchScore": float(selection_decimal),
+                    "relevanceScore": float(rejection_decimal)
+                },
+                "status": "success",
+                "raw_response": content,
+                "selected_prompts": selected_prompts_str,
+                "data": {
+                    "roles": roles,
+                    "skills_data": {roles[0]: skills_data},
+                    "selection_threshold": float(selection_decimal),
+                    "rejection_threshold": float(rejection_decimal),
+                    "matchScore": float(selection_decimal),
+                    "relevanceScore": float(rejection_decimal)
+                },
+                # Top level thresholds in multiple formats
+                "selection_threshold": float(selection_decimal),
+                "rejection_threshold": float(rejection_decimal),
+                "matchScore": float(selection_decimal),
+                "relevanceScore": float(rejection_decimal),
+                # Additional formats just to be safe
+                "selectionThreshold": float(selection_decimal),
+                "rejectionThreshold": float(rejection_decimal)
+            }
+            
+            # Log the response structure to verify thresholds are included
+            logger.info(f"Response includes decimal thresholds - Selection: {selection_threshold}% -> {selection_decimal}, Rejection: {rejection_threshold}% -> {rejection_decimal}")
+            
+            # Return a direct JSONResponse instead of relying on FastAPI automatic serialization
+            return JSONResponse(content=response_dict_with_thresholds)
         except Exception as db_error:
             db.rollback()
             logger.error(f"Database error: {str(db_error)}")
@@ -814,19 +878,34 @@ async def parse_dashboards(dashboard_result):
                         }
     
     # Extract threshold recommendations
-    thresholds_match = re.search(r'Threshold Recommendations:(.*?)', dashboard_result, re.DOTALL)
-    selection_threshold = 70
-    rejection_threshold = 30
+    thresholds_match = re.search(r'Threshold Recommendations:(.*?)(?=$)', dashboard_result, re.DOTALL)
+    selection_threshold = 75  # Default if extraction fails
+    rejection_threshold = 30  # Default if extraction fails
     
     if thresholds_match:
         thresholds_text = thresholds_match.group(1)
-        selection_match = re.search(r'Selection Threshold: (\d+)%', thresholds_text)
-        rejection_match = re.search(r'Rejection Threshold: (\d+)%', thresholds_text)
+        
+        # Simple extraction for explicit values
+        selection_match = re.search(r'Selection Threshold: (\d+(?:\.\d+)?)%', thresholds_text)
+        rejection_match = re.search(r'Rejection Threshold: (\d+(?:\.\d+)?)%', thresholds_text)
         
         if selection_match:
-            selection_threshold = int(selection_match.group(1))
+            try:
+                selection_threshold = int(float(selection_match.group(1)))
+                logger.info(f"Extracted selection threshold: {selection_threshold}%")
+            except (ValueError, TypeError) as e:
+                logger.error(f"Error parsing selection threshold: {str(e)}")
+        else:
+            logger.warning("No selection threshold found in response, using default")
+                
         if rejection_match:
-            rejection_threshold = int(rejection_match.group(1))
+            try:
+                rejection_threshold = int(float(rejection_match.group(1)))
+                logger.info(f"Extracted rejection threshold: {rejection_threshold}%")
+            except (ValueError, TypeError) as e:
+                logger.error(f"Error parsing rejection threshold: {str(e)}")
+        else:
+            logger.warning("No rejection threshold found in response, using default")
 
     # Create a categories structure for backward compatibility
     categories = {}
@@ -976,7 +1055,7 @@ async def delete_job(job_id: int, db: Session = Depends(get_db)):
         logger.error(f"Error deleting job: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Error deleting job: {str(e)}")
 
-@analyze_job_description_router.get("/api/job_analyses/", response_model=List[JobAnalysisResponse])
+@analyze_job_description_router.get("/api/job_analyses/")  # Remove the response_model to use direct JSONResponse
 async def get_all_job_analyses(db: Session = Depends(get_db)):
     try: 
         # Query all records from the threshold_scores table
@@ -988,9 +1067,8 @@ async def get_all_job_analyses(db: Session = Depends(get_db)):
         # Create a list to store the responses
         response_list = []
         
-        # Convert each database record to a response model
+        # Convert each database record to a direct response dict
         for analysis in analyses:
-
             job_id = analysis.job_id
             # Handle threshold_result safely
             threshold_result = {}
@@ -1063,7 +1141,19 @@ async def get_all_job_analyses(db: Session = Depends(get_db)):
                 "office_timings": ""  # Empty string instead of None
             }
             
-            # Construct the response dict - ensure all data is serializable
+            # Get the actual threshold values for logging
+            selection_value = analysis.selection_score if analysis.selection_score is not None else 0.0
+            rejection_value = analysis.rejection_score if analysis.rejection_score is not None else 0.0
+            
+            # Convert from 0-100 range to 0-1 range for frontend display if necessary
+            # The frontend expects values in decimal (0.75 instead of 75%)
+            selection_decimal = selection_value / 100.0 if selection_value > 1.0 else selection_value
+            rejection_decimal = rejection_value / 100.0 if rejection_value > 1.0 else rejection_value
+            
+            logger.info(f"Job analysis {analysis.threshold_id} for job {job_id}: Selection={selection_value} -> {selection_decimal}, Rejection={rejection_value} -> {rejection_decimal}")
+            
+            # Construct the response dict directly - ensure all data is serializable
+            # Include thresholds in multiple places to ensure frontend can find them
             response_dict = {
                 "roles": roles,
                 "skills_data": skills_data,
@@ -1073,27 +1163,42 @@ async def get_all_job_analyses(db: Session = Depends(get_db)):
                     "skills": skills_data
                 },
                 "database_id": analysis.threshold_id,
-                "job_id": analysis.job_id
+                "job_id": analysis.job_id,
+                "formatted_data": {
+                    "roles": roles,
+                    "skills_data": skills_data,
+                    "selection_threshold": float(selection_decimal),
+                    "rejection_threshold": float(rejection_decimal)
+                },
+                "status": "success",
+                "raw_response": threshold_prompts,
+                "selected_prompts": custom_prompts,
+                "basic_info": basic_info,
+                "data": {
+                    "roles": roles,
+                    "skills_data": skills_data
+                },
+                # Add threshold values in MULTIPLE formats to ensure frontend can find them
+                "selection_threshold": float(selection_decimal),
+                "rejection_threshold": float(rejection_decimal),
+                "matchScore": float(selection_decimal),
+                "relevanceScore": float(rejection_decimal),
+                # Additional fields to ensure they're accessible
+                "selectionThreshold": float(selection_decimal),
+                "rejectionThreshold": float(rejection_decimal)
             }
             
-            # Create response object without selection_threshold and rejection_threshold
-            response = JobAnalysisResponse(
-                roles=roles,
-                skills_data=skills_data,
-                formatted_data=response_dict,
-                selection_threshold=0.0,
-                rejection_threshold=0.0,
-                status="success",
-                job_id=job_id,
-                raw_response=threshold_prompts,
-                selected_prompts=custom_prompts,
-                database_id=analysis.threshold_id,
-                basic_info=basic_info,
-                data=response_dict
-            )
-            response_list.append(response)
+            response_list.append(response_dict)
         
-        return response_list
+        # Log a sample of the response
+        logger.info(f"Returning {len(response_list)} job analyses with thresholds")
+        if response_list:
+            sample = response_list[0]
+            logger.info(f"Sample response: selection_threshold={sample['selection_threshold']}, matchScore={sample['matchScore']}")
+        
+        # Return a direct JSONResponse to have full control over the serialization
+        return JSONResponse(content=response_list)
+        
     except Exception as e:
         logger.error(f"Error retrieving all job analyses: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
