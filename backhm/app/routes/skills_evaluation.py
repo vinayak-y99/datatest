@@ -807,24 +807,36 @@ Job Description:
         logger.error(f"Dashboard update error: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
 
-# Helper function to parse job basic information
-async def parse_job_info(extraction_result):
-    # Extract basic info
-    basic_info = {}
-    basic_info_match = re.search(r'Basic Information:(.*?)(?:Primary Responsibilities:|$)', extraction_result, re.DOTALL)
-    if basic_info_match:
-        basic_info_text = basic_info_match.group(1)
-        for line in basic_info_text.strip().split('\n'):
-            if ':' in line:
-                key, value = line.split(':', 1)
-                key = key.strip('- ')
-                basic_info[key] = value.strip()
+# Helper function to format category keys consistently
+def format_category_key(name):
+    """
+    Format a dashboard category name into a consistent key format:
+    - Remove quotes
+    - Convert to lowercase
+    - Replace spaces with underscores
+    - Ensure the result is a valid key
+    """
+    if not name:
+        return "unknown_category"
     
-    # Extract responsibilities
-    responsibilities_match = re.search(r'Primary Responsibilities:(.*?)$', extraction_result, re.DOTALL)
-    responsibilities = responsibilities_match.group(1).strip() if responsibilities_match else ""
+    # Remove any quotes and normalize spaces
+    cleaned = name.strip().replace('"', '').replace("'", '')
     
-    return basic_info, responsibilities
+    # Convert to lowercase and replace spaces with underscores
+    key = cleaned.lower().replace(' ', '_')
+    
+    # Remove any other non-alphanumeric characters that might cause issues
+    key = re.sub(r'[^\w_]', '', key)
+    
+    # Ensure it starts with a letter or underscore (for valid dict keys)
+    if key and not re.match(r'^[a-z_]', key):
+        key = 'category_' + key
+    
+    # Handle empty results
+    if not key:
+        key = "unknown_category"
+        
+    return key
 
 # Helper function to parse dashboard information
 async def parse_dashboards(dashboard_result):
@@ -839,7 +851,7 @@ async def parse_dashboards(dashboard_result):
     # Process each dashboard
     for dashboard_num, dashboard_name, dashboard_content in dashboard_matches:
         dashboard_name = dashboard_name.strip()
-        category_key = dashboard_name.lower().replace(' ', '_')
+        category_key = format_category_key(dashboard_name)
         selected_prompts.append(f"Skills category: {dashboard_name}")
         
         # Create a new category if it doesn't exist

@@ -39,7 +39,7 @@ class JobDescriptionRequest(BaseModel):
 class JobDescriptionResponse(BaseModel):
     job_description: str = Field(..., description="Generated job description")
 
-def generate_job_description(
+async def generate_job_description(
     position_title: str,
     required_experience: str,
     location: Optional[str] = None,
@@ -55,37 +55,47 @@ def generate_job_description(
     
     try:
         # Forward request to the LLM service API endpoint
-        async def call_api():
-            async with AsyncClient() as client:
-                request_data = {
-                    "position_title": position_title,
-                    "required_experience": required_experience,
-                    "location": location,
-                    "position_type": position_type, 
-                    "office_timings": office_timings,
-                    "role_details": role_details
-                }
-                
-                response = await client.post(
-                    "http://127.0.0.1:8000/api/generate_job_description/",
-                    json=request_data
-                )
-                
-                if response.status_code != 200:
-                    raise HTTPException(
-                        status_code=response.status_code,
-                        detail=f"Failed to generate job description: {response.text}"
-                    )
-                
-                return response.json().get("job_description", "")
+        # Configure the Gemini API
+        api_key = os.environ.get("GEMINI_API_KEY", "AIzaSyB3ZN_ICuWtHUypL1vhvORWA7KwoNiKVMw")
+        genai.configure(api_key=api_key)
         
-        # Run the async function in a synchronous context
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
-        result = loop.run_until_complete(call_api())
-        loop.close()
+        # Initialize the Gemini 2.0 Flash model
+        model = genai.GenerativeModel('gemini-2.0-flash')
         
-        return result
+        # Construct the prompt for Gemini
+        prompt = f"""
+        Create a professional and comprehensive job description with the following details:
+
+        Position Title: {position_title}
+        Required Experience: {required_experience}
+        """
+        
+        # Add optional fields if provided
+        if location:
+            prompt += f"\nLocation: {location}"
+        if position_type:
+            prompt += f"\nPosition Type: {position_type}"
+        if office_timings:
+            prompt += f"\nOffice Timings: {office_timings}"
+        if role_details:
+            prompt += f"\nRole Details: {role_details}"
+        
+        prompt += """
+        
+        Format the job description professionally with the following sections:
+        1. Skills required based on the experience level
+        2. Job Summary
+        3. Responsibilities
+        4. Requirements & Qualifications
+        5. Education Requirements
+        6. Good to have skills (if applicable)
+        
+        Ensure the job description is engaging, detailed, and tailored specifically to the provided information.
+        """
+        
+        # Generate content using Gemini 2.0 Flash
+        response = model.generate_content(prompt)
+        return response.text
     except Exception as e:
         logger.error(f"Error generating job description: {str(e)}")
         logger.error(traceback.format_exc())
@@ -101,7 +111,7 @@ async def api_generate_job_description(request: JobDescriptionRequest):
     - Optional fields include location, position type, office timings, and role details
     - Returns a formatted job description with standard sections
     """
-    job_description = generate_job_description(
+    job_description = await generate_job_description(
         position_title=request.position_title,
         required_experience=request.required_experience,
         location=request.location,

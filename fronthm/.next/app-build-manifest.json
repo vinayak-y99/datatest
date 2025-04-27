@@ -1,5 +1,15 @@
 {
   "pages": {
+    "/api/recommended-prompts/route": [
+      "static/chunks/webpack.js",
+      "static/chunks/main-app.js",
+      "static/chunks/app/api/recommended-prompts/route.js"
+    ],
+    "/api/threshold-ids/route": [
+      "static/chunks/webpack.js",
+      "static/chunks/main-app.js",
+      "static/chunks/app/api/threshold-ids/route.js"
+    ],
     "/layout": [
       "static/chunks/webpack.js",
       "static/chunks/main-app.js",
@@ -15,16 +25,6 @@
       "static/chunks/webpack.js",
       "static/chunks/main-app.js",
       "static/chunks/app/api/jd/sample-prompts/route.js"
-    ],
-    "/api/threshold-ids/route": [
-      "static/chunks/webpack.js",
-      "static/chunks/main-app.js",
-      "static/chunks/app/api/threshold-ids/route.js"
-    ],
-    "/api/recommended-prompts/route": [
-      "static/chunks/webpack.js",
-      "static/chunks/main-app.js",
-      "static/chunks/app/api/recommended-prompts/route.js"
     ]
   }
 }

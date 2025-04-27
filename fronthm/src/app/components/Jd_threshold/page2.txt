@@ -1,0 +1,1034 @@
+//This file is a part of view Threshold
+"use client";
+import React, { useState, useEffect } from "react";
+import Sidebar from "./sidebarView";
+import RightSidebar from './rightsidebar';
+import Link from 'next/link';
+import { FaCheckCircle, FaHourglassHalf, FaUserTie, FaChartBar, FaChartPie, FaStar, FaArrowUp, FaBars, FaSort } from 'react-icons/fa';
+
+// Sample Prompts Component
+const SamplePrompts = ({ prompts }) => {
+  if (!prompts ||!Array.isArray(prompts) || prompts.length === 0) {
+    return null;
+  }
+};
+
+// Placeholder components for the dashboard items
+// Modify the ThresholdScore component (and do the same for all other components)
+const ThresholdScore = ({ onMinimize, onUpdate, viewOnly }) => (
+  <div className="bg-white p-4 rounded-lg shadow">
+    <div className="flex justify-between items-center mb-4">
+      <h3 className="text-lg font-semibold">Threshold Score</h3>
+      <div className="flex space-x-2">
+        {!viewOnly && (
+        <button onClick={onUpdate} className="text-blue-500 hover:text-blue-700">Update</button>
+        )}
+        <button onClick={onMinimize} className="text-gray-500 hover:text-gray-700">Minimize</button>
+      </div>
+    </div>
+    <div>Threshold Score Content</div>
+  </div>
+);
+
+const JobDescription = ({ onMinimize, onUpdate, viewOnly }) => (
+  <div className="bg-white p-4 rounded-lg shadow">
+    <div className="flex justify-between items-center mb-4">
+      <h3 className="text-lg font-semibold">Job Description</h3>
+      <div className="flex space-x-2">
+        {!viewOnly && (
+        <button onClick={onUpdate} className="text-blue-500 hover:text-blue-700">Update</button>
+        )}
+        <button onClick={onMinimize} className="text-gray-500 hover:text-gray-700">Minimize</button>
+      </div>
+    </div>
+    <div>Job Description Content</div>
+  </div>
+);
+
+const Resume = ({ onMinimize, onUpdate, viewOnly }) => (
+  <div className="bg-white p-4 rounded-lg shadow">
+    <div className="flex justify-between items-center mb-4">
+      <h3 className="text-lg font-semibold">Resume</h3>
+      <div className="flex space-x-2">
+        {!viewOnly && (
+        <button onClick={onUpdate} className="text-blue-500 hover:text-blue-700">Update</button>
+        )}
+        <button onClick={onMinimize} className="text-gray-500 hover:text-gray-700">Minimize</button>
+      </div>
+    </div>
+    <div>Resume Content</div>
+  </div>
+);
+
+const CommunicationSkills = ({ onMinimize, onUpdate, viewOnly }) => (
+  <div className="bg-white p-4 rounded-lg shadow">
+    <div className="flex justify-between items-center mb-4">
+      <h3 className="text-lg font-semibold">Communication Skills</h3>
+      <div className="flex space-x-2">
+        {!viewOnly && (
+        <button onClick={onUpdate} className="text-blue-500 hover:text-blue-700">Update</button>
+        )}
+        <button onClick={onMinimize} className="text-gray-500 hover:text-gray-700">Minimize</button>
+      </div>
+    </div>
+    <div>Communication Skills Content</div>
+  </div>
+);
+
+const Coding = ({ onMinimize, onUpdate, viewOnly }) => (
+  <div className="bg-white p-4 rounded-lg shadow">
+    <div className="flex justify-between items-center mb-4">
+      <h3 className="text-lg font-semibold">Coding</h3>
+      <div className="flex space-x-2">
+        {!viewOnly && (
+        <button onClick={onUpdate} className="text-blue-500 hover:text-blue-700">Update</button>
+        )}
+        <button onClick={onMinimize} className="text-gray-500 hover:text-gray-700">Minimize</button>
+      </div>
+    </div>
+    <div>Coding Content</div>
+  </div>
+);
+
+const BehaviouralSkills = ({ onMinimize, onUpdate, viewOnly }) => (
+  <div className="bg-white p-4 rounded-lg shadow">
+    <div className="flex justify-between items-center mb-4">
+      <h3 className="text-lg font-semibold">Behavioural Skills</h3>
+      <div className="flex space-x-2">
+        {!viewOnly && (
+        <button onClick={onUpdate} className="text-blue-500 hover:text-blue-700">Update</button>
+        )}
+        <button onClick={onMinimize} className="text-gray-500 hover:text-gray-700">Minimize</button>
+      </div>
+    </div>
+    <div>Behavioural Skills Content</div>
+  </div>
+);
+
+const CommonDashboard = ({ onMinimize, onUpdate, viewOnly }) => (
+  <div className="bg-white p-4 rounded-lg shadow">
+    <div className="flex justify-between items-center mb-4">
+      <h3 className="text-lg font-semibold">Common Dashboard</h3>
+      <div className="flex space-x-2">
+        {!viewOnly && (
+        <button onClick={onUpdate} className="text-blue-500 hover:text-blue-700">Update</button>
+        )}
+        <button onClick={onMinimize} className="text-gray-500 hover:text-gray-700">Minimize</button>
+      </div>
+    </div>
+    <div>Common Dashboard Content</div>
+  </div>
+);
+
+const HRSystem = ({ onMinimize, onUpdate, viewOnly }) => (
+  <div className="bg-white p-4 rounded-lg shadow">
+    <div className="flex justify-between items-center mb-4">
+      <h3 className="text-lg font-semibold">HR System</h3>
+      <div className="flex space-x-2">
+        {!viewOnly && (
+        <button onClick={onUpdate} className="text-blue-500 hover:text-blue-700">Update</button>
+        )}
+        <button onClick={onMinimize} className="text-gray-500 hover:text-gray-700">Minimize</button>
+      </div>
+    </div>
+    <div>HR System Content</div>
+  </div>
+);
+
+// Add this component after the existing dashboard components
+const KeySkillsBreakdown = ({ skills, onMinimize, onUpdate, viewOnly }) => {
+  // Animation states
+  const [animationStage, setAnimationStage] = useState(0);
+  const [visibleSkills, setVisibleSkills] = useState([]);
+  const [hoveredSkill, setHoveredSkill] = useState(null);
+
+  // Process skills data for waterfall visualization
+  const processSkills = (skillsData) => {
+    if (!skillsData || !Array.isArray(skillsData) || skillsData.length === 0) {
+      // Default skills if none provided
+      return [
+        { name: "Prod A", importance: 62, color: "from-blue-400 to-blue-500" },
+        { name: "Prod B", importance: 12, color: "from-rose-400 to-rose-500" },
+        { name: "Prod C", importance: 12, color: "from-emerald-400 to-emerald-500" },
+        { name: "Prod D", importance: 10, color: "from-amber-400 to-amber-500" },
+        { name: "Other", importance: 4, color: "from-indigo-400 to-indigo-500" }
+      ].sort((a, b) => b.importance - a.importance);
+    }
+
+    // Define color palette for skills - using gradient pairs for elegance
+    const colorClasses = [
+      "from-blue-400 to-blue-500", 
+      "from-rose-400 to-rose-500",
+      "from-emerald-400 to-emerald-500", 
+      "from-amber-400 to-amber-500",
+      "from-indigo-400 to-indigo-500",
+      "from-purple-400 to-purple-500",
+      "from-teal-400 to-teal-500",
+      "from-orange-400 to-orange-500",
+      "from-cyan-400 to-cyan-500",
+      "from-pink-400 to-pink-500",
+      "from-lime-400 to-lime-500",
+      "from-violet-400 to-violet-500",
+      "from-fuchsia-400 to-fuchsia-500",
+      "from-sky-400 to-sky-500",
+      "from-slate-400 to-slate-500"
+    ];
+
+    // Process and sort skills by importance
+    return skillsData
+      .map((skill, index) => ({
+        ...skill,
+        color: colorClasses[index % colorClasses.length],
+        dotColor: colorClasses[index % colorClasses.length].split(' ')[0].replace('from-', 'bg-'),
+        glowColor: colorClasses[index % colorClasses.length].includes('blue') ? 'rgba(59, 130, 246, 0.5)' : 
+                   colorClasses[index % colorClasses.length].includes('rose') ? 'rgba(244, 63, 94, 0.5)' :
+                   colorClasses[index % colorClasses.length].includes('emerald') ? 'rgba(16, 185, 129, 0.5)' :
+                   colorClasses[index % colorClasses.length].includes('amber') ? 'rgba(245, 158, 11, 0.5)' :
+                   colorClasses[index % colorClasses.length].includes('indigo') ? 'rgba(99, 102, 241, 0.5)' :
+                   colorClasses[index % colorClasses.length].includes('purple') ? 'rgba(168, 85, 247, 0.5)' :
+                   colorClasses[index % colorClasses.length].includes('teal') ? 'rgba(20, 184, 166, 0.5)' :
+                   colorClasses[index % colorClasses.length].includes('orange') ? 'rgba(249, 115, 22, 0.5)' :
+                   colorClasses[index % colorClasses.length].includes('cyan') ? 'rgba(6, 182, 212, 0.5)' :
+                   colorClasses[index % colorClasses.length].includes('pink') ? 'rgba(236, 72, 153, 0.5)' :
+                   'rgba(99, 102, 241, 0.5)'
+      }))
+      .sort((a, b) => b.importance - a.importance);
+  };
+
+  const sortedSkills = processSkills(skills);
+
+  // Calculate cumulative positions for skills
+  const calculatePositions = () => {
+    let runningTotal = 0;
+    return sortedSkills.map(skill => {
+      const startPos = runningTotal;
+      runningTotal += skill.importance;
+      return {
+        ...skill,
+        startPos,
+        endPos: runningTotal
+      };
+    });
+  };
+
+  const positionedSkills = calculatePositions();
+
+  // Animation effect
+  useEffect(() => {
+    setVisibleSkills([]);
+    
+    const timer1 = setTimeout(() => {
+      setAnimationStage(1);
+    }, 200);
+    
+    // Add skills one by one
+    let currentDelay = 400;
+    const skillTimers = positionedSkills.map((skill, index) => {
+      const timer = setTimeout(() => {
+        setVisibleSkills(prev => [...prev, skill]);
+      }, currentDelay);
+      currentDelay += 180; // Stagger each skill animation
+      return timer;
+    });
+    
+    return () => {
+      clearTimeout(timer1);
+      skillTimers.forEach(timer => clearTimeout(timer));
+    };
+  }, [skills]);
+
+  const barHeight = 3; // Slightly thicker for more visual presence
+
+  // Define keyframe animation for the glow pulse effect
+  const pulseKeyframes = `
+    @keyframes glowPulse {
+      0% { filter: drop-shadow(0 0 1px transparent); }
+      50% { filter: drop-shadow(0 0 3px var(--glow-color)); }
+      100% { filter: drop-shadow(0 0 1px transparent); }
+    }
+  `;
+
+  return (
+    <div className="bg-white p-6 rounded-lg">
+      <style>{pulseKeyframes}</style>
+      {/* Individual elegant bars */}
+      <div className="space-y-5">
+        {positionedSkills.map((skill, index) => {
+          const isVisible = visibleSkills.some(s => s.name === skill.name);
+          const isHovered = hoveredSkill === skill.name;
+          
+          return (
+            <div 
+              key={index} 
+              className="relative transition-all duration-300"
+              onMouseEnter={() => setHoveredSkill(skill.name)}
+              onMouseLeave={() => setHoveredSkill(null)}
+            >
+              {/* Skill name and percentage */}
+              <div className="flex justify-between mb-2">
+                <div className="flex items-center">
+                  <div className={`w-2.5 h-2.5 rounded-full mr-2 ${skill.dotColor}`}></div>
+                  <span className={`text-sm font-medium ${isHovered ? 'text-gray-900' : 'text-gray-700'} transition-colors duration-300`}>
+                    {skill.name}
+                  </span>
+                </div>
+                <span className={`text-sm ${isHovered ? 'text-gray-900 font-medium' : 'text-gray-500'} transition-colors duration-300`}>
+                  {isVisible ? `${Math.round(skill.importance)}%` : ''}
+                </span>
+              </div>
+              
+              {/* Beautiful track with subtle shadow */}
+              <div className="w-full bg-gray-100 rounded-full h-2 relative shadow-inner">
+                {/* Gradient bar with shadow and glow */}
+                <div 
+                  className={`bg-gradient-to-r ${skill.color} rounded-full transition-all duration-700 ease-out absolute top-0 shadow-sm 
+                    ${isHovered ? 'shadow-md brightness-110' : ''}`}
+                  style={{
+                    left: `${skill.startPos}%`,
+                    width: isVisible ? `${skill.importance}%` : '0%',
+                    height: `${isHovered ? barHeight + 1 : barHeight}px`,
+                    transform: isHovered ? 'translateY(-0.5px)' : 'none',
+                    animation: isVisible ? `${isHovered ? 'glowPulse 1.5s infinite' : 'glowPulse 3s infinite'} alternate` : 'none',
+                    '--glow-color': skill.glowColor,
+                    filter: isHovered ? `drop-shadow(0 0 3px ${skill.glowColor})` : `drop-shadow(0 0 1px ${skill.glowColor})`
+                  }}
+                />
+              </div>
+              
+              {/* Show value bubble on hover */}
+              {isHovered && isVisible && (
+                <div 
+                  className="absolute top-0 transform -translate-y-full px-2 py-1 bg-white text-xs text-gray-700 font-medium rounded-md shadow-md border border-gray-100 transition-opacity duration-200 opacity-100 mt-1"
+                  style={{ left: `${skill.startPos + (skill.importance / 2)}%`, transform: 'translateX(-50%) translateY(-100%)' }}
+                >
+                  {skill.startPos}% - {skill.endPos}%
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+};
+
+export default function Threshold({ jdData = {}, jdId, thresholdId, onDataChange, onClose, viewOnly = false }) {
+  // Debug the incoming props
+  console.log('Threshold component received jdData:', jdData);
+  console.log('Threshold component props - jdId:', jdId, 'thresholdId:', thresholdId);
+  console.log('Sample prompts received in Threshold:', jdData?.apiResponse?.selected_prompts);
+
+  // State for tracking whether we've fetched custom prompts
+  const [hasLoadedCustomPrompts, setHasLoadedCustomPrompts] = useState(false);
+
+  const [roles, setRoles] = useState(() => {
+    const rolesData = jdData?.apiResponse?.roles;
+    console.log("Initializing roles with:", rolesData);
+    return rolesData || [];
+  });
+
+  const [skillsData, setSkillsData] = useState(() => {
+    const skillsData = jdData?.apiResponse?.skills_data || [];
+    return [Array.isArray(skillsData) ? skillsData : [skillsData]];
+  });
+
+  // Initialize sample prompts from the API response
+  const [samplePrompts, setSamplePrompts] = useState(() => {
+    const prompts = jdData?.apiResponse?.selected_prompts;
+    console.log('Initializing sample prompts with:', prompts);  
+    // Check if prompts is an array
+    if (Array.isArray(prompts) && prompts.length > 0) {
+      return prompts;
+    }
+    
+    // Generate default prompts
+    const role = jdData?.apiResponse?.roles?.[0] || "the role";
+    const skills = Object.keys(jdData?.apiResponse?.skills_data || {}).slice(0, 5).join(", ");
+
+    return [
+      `I am applying for ${role} position. Here's my resume: [PASTE RESUME]. How well do I match the requirements?`,
+      `I have experience in ${skills}. Can you help me tailor my resume for the ${role} position?`,
+      `What specific achievements should I highlight in my cover letter for the ${role} position?`,
+      `Based on the job description for ${role}, what questions might I be asked in an interview?`,
+      `How can I demonstrate my expertise in ${skills} during an interview for the ${role} position?`
+    ];
+  });
+    
+  // Define all the update handler functions at the component level
+    const handleUpdateThreshold = () => {
+      console.log("Updating Threshold Score");
+      // Add your update logic here
+    };
+  
+    const handleUpdateJobDescription = () => {
+      console.log("Updating Job Description");
+      // Add your update logic here
+    };
+  
+    const handleUpdateResume = () => {
+      console.log("Updating Resume");
+      // Add your update logic here
+    };
+  
+    const handleUpdateCommunicationSkills = () => {
+      console.log("Updating Communication Skills");
+      // Add your update logic here
+    };
+  
+    const handleUpdateCoding = () => {
+      console.log("Updating Coding");
+      // Add your update logic here
+    };
+  
+    const handleUpdateBehaviouralSkills = () => {
+      console.log("Updating Behavioural Skills");
+      // Add your update logic here
+    };
+  
+    const handleUpdateCommonDashboard = () => {
+      console.log("Updating Common Dashboard");
+      // Add your update logic here
+    };
+
+    const handleUpdateHRSystem = () => {
+      console.log("Updating HR System");
+      // Add your update logic here
+    };
+
+  const [selectedRoles, setSelectedRoles] = useState([]);
+  const [dashboardData, setDashboardData] = useState([]);
+  const [showThreshold, setShowThreshold] = useState(true);
+  const [showJobDescription, setShowJobDescription] = useState(true);
+  const [showResume, setShowResume] = useState(true);
+  const [showCommunicationSkills, setShowCommunicationSkills] = useState(true);
+  const [showCoding, setShowCoding] = useState(true);
+  const [showBehaviouralSkills, setShowBehaviouralSkills] = useState(true);
+  const [showCommondashBoard, setShowCommondashBoard] = useState(true);
+  const [showHrSystem, setShowHrSystem] = useState(true);
+  const [ViewItems, setViewItems] = useState([]);
+  const [showProjectdashboard, setShowDashboard] = useState(false);
+  const [isSidebarOpen, setIsSidebarOpen] = useState(true);
+  const [candidates, setCandidates] = useState([]);
+  const [newComment, setNewComment] = useState("");
+  const [chatMessages, setChatMessages] = useState([]);
+
+  const [timelineData, setTimelineData] = useState([
+    {
+      id: 1,
+      candidate: "John Doe",
+      stages: [
+        { stage: "Applied", date: "2024-01-15", status: "completed" },
+        { stage: "Screening", date: "2024-01-16", status: "completed" },
+        { stage: "Technical", date: "2024-01-18", status: "current" },
+        { stage: "HR Round", date: "", status: "pending" },
+        { stage: "Offer", date: "", status: "pending" }
+      ]
+    },
+  ]);
+
+  const [thresholdScores, setThresholdScores] = useState({
+    selection: 0,
+    rejection: 0
+  });
+
+  const [sharedValue, setSharedValue] = useState(null);
+  const [selectedRolesForThreshold, setSelectedRolesForThreshold] = useState([]);
+
+  // Add this new state for key skills
+  const [showKeySkills, setShowKeySkills] = useState(true);
+
+  useEffect(() => {
+    if (jdData?.apiResponse) {
+      setRoles(jdData.apiResponse.roles || []);
+      setSkillsData([Array.isArray(jdData.apiResponse.skills_data)
+        ? jdData.apiResponse.skills_data
+        : [jdData.apiResponse.skills_data || {}]]);
+      
+      // Make sure we're setting an array for sample prompts
+      if (Array.isArray(jdData.apiResponse.selected_prompts)) {
+        setSamplePrompts(jdData.apiResponse.selected_prompts);
+      } else if (typeof jdData.apiResponse.selected_prompts === 'string') {
+        // If it's a string, convert it to an array with one item
+        setSamplePrompts([jdData.apiResponse.selected_prompts]);
+      } else {
+        // Generate default prompts
+        const role = jdData.apiResponse.roles?.[0] || "the role";
+        const skills = Object.keys(jdData.apiResponse.skills_data || {}).slice(0, 5).join(", ");
+        
+        setSamplePrompts([
+          `I am applying for ${role} position. Here's my resume: [PASTE RESUME]. How well do I match the requirements?`,
+          `I have experience in ${skills}. Can you help me tailor my resume for the ${role} position?`,
+          `What specific achievements should I highlight in my cover letter for the ${role} position?`,
+          `Based on the job description for ${role}, what questions might I be asked in an interview?`,
+          `How can I demonstrate my expertise in ${skills} during an interview for the ${role} position?`
+        ]);
+      }
+      
+      console.log('Updated sample prompts from jdData:', jdData.apiResponse.selected_prompts);
+    }
+  }, [jdData]);
+
+  // Add a useEffect to fetch sample prompts specific to this threshold ID
+  useEffect(() => {
+    // Only fetch if we have a threshold ID and haven't loaded custom prompts yet
+    if (thresholdId && !hasLoadedCustomPrompts) {
+      const fetchCustomPrompts = async () => {
+        try {
+          console.log(`Fetching custom prompts for threshold ID: ${thresholdId}`);
+          
+          const response = await fetch('/api/jd/sample-prompts', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({ 
+              threshold_id: parseInt(thresholdId)
+            }),
+          });
+          
+          if (!response.ok) {
+            throw new Error(`Failed to fetch custom prompts: ${response.status}`);
+          }
+          
+          const data = await response.json();
+          console.log('Received custom prompts:', data);
+          
+          // Check if we got custom prompts and update state
+          if (data.sample_prompts) {
+            setSamplePrompts(data.sample_prompts);
+            
+            // If we're using the onDataChange callback, also update parent component
+            if (onDataChange) {
+              onDataChange({
+                selected_prompts: data.sample_prompts
+              });
+            }
+            
+            // Mark that we've loaded custom prompts
+            setHasLoadedCustomPrompts(true);
+          }
+        } catch (error) {
+          console.error('Error fetching custom prompts:', error);
+        }
+      };
+      
+      fetchCustomPrompts();
+    }
+  }, [thresholdId, hasLoadedCustomPrompts, onDataChange]);
+
+  const handleSelectedRoles = (roles) => {
+    // console.log("Page received selected roles:", roles);
+    setSelectedRolesForThreshold(roles);
+    // Show the dashboard when roles are selected
+    setShowDashboard(true);
+  };
+
+  const handleSendRangeValue = (value) => {
+    setSharedValue(value);
+  };
+
+  const handleRolesUpdate = (newRoles) => {
+    console.log("Page received new roles from API:", newRoles);
+    setRoles(newRoles);
+  };
+
+  const handleSkillsUpdate = (newSkills) => {
+    console.log("Page received new skills from API:", newSkills);
+    setSkillsData(newSkills);
+  };
+
+  const handleRoleSelection = (selectedRoles) => {
+    setSelectedRoles(selectedRoles);
+  };
+
+  const handleDashboardUpdate = (newData) => {
+    setSkillsData(newData);
+    setShowDashboard(true);
+    setIsSidebarOpen(true);
+  };
+
+  const handleShowThreshold = () => {
+    setShowThreshold(true);
+    const filtered = ViewItems.filter((item) => item !== "threshold");
+    setViewItems(filtered);
+  };
+
+  const handleShowJobDescription = () => {
+    setShowJobDescription(true);
+    const filtered = ViewItems.filter((item) => item !== "job-description");
+    setViewItems(filtered);
+  };
+
+  const handleShowResume = () => {
+    setShowResume(true);
+    const filtered = ViewItems.filter((item) => item !== "resume");
+    setViewItems(filtered);
+  };
+
+  const handleShowCommunicationSkills = () => {
+    setShowCommunicationSkills(true);
+    const filtered = ViewItems.filter((item) => item !== "communication-skills");
+    setViewItems(filtered);
+  };
+
+  const handleShowCoding = () => {
+    setShowCoding(true);
+    const filtered = ViewItems.filter((item) => item !== "coding");
+    setViewItems(filtered);
+  };
+
+  const handleShowBehaviouralSkills = () => {
+    setShowBehaviouralSkills(true);
+    const filtered = ViewItems.filter((item) => item !== "Behavioural-skills");
+    setViewItems(filtered);
+  };
+
+  const handleShowCommondashBoard = () => {
+    setShowCommondashBoard(true);
+    const filtered = ViewItems.filter((item) => item !== "commondashboard");
+    setViewItems(filtered);
+  };
+
+  const handleShowHrSystem = () => {
+    setShowHrSystem(true);
+    const filtered = ViewItems.filter((item) => item !== "HrSystem");
+    setViewItems(filtered);
+  };
+
+  const handleFileUploadSuccess = (data) => {
+    console.log("File upload success with data:", data);
+    setRoles(data.roles || []);
+    setSkillsData(data.skills_data || {});
+    setSamplePrompts(data.selected_prompts || "");
+    console.log("Setting sample prompts to:", data.selected_prompts);
+    setSelectedRolesForThreshold([]);
+  };
+
+  const handleCreate = () => {
+    console.log("Creating dashboard with roles:", selectedRolesForThreshold);
+    console.log("Skills data available:", skillsData);
+    console.log("Sample prompts available:", samplePrompts);
+    setShowDashboard(true);
+    setIsSidebarOpen(false);
+    // Pass complete data to RightSidebar
+    if (showProjectdashboard) {
+      return (
+        <RightSidebar
+          selectedRoles={selectedRolesForThreshold}
+          skills_data={skillsData}
+          rangeValue={sharedValue}
+          jobId={jdData?.jdId}
+        />
+      );
+    }
+  };
+
+  // Helper function to check if we have dashboard data to display
+  const hasDashboardData = () => {
+    if (!jdData?.apiResponse?.skills_data) return false;
+    const skills_data = jdData.apiResponse.skills_data;
+    
+    // Check if we actually have data to display
+    if (typeof skills_data === 'object' && Object.keys(skills_data).length > 0) {
+      // Check first role
+      const firstRole = Object.keys(skills_data)[0];
+      return Object.keys(skills_data[firstRole] || {}).length > 0;
+    }
+    
+    return false;
+  };
+
+  // For view-only mode with real data
+  const renderDashboards = () => {
+    if (!jdData?.apiResponse?.skills_data) {
+      return (
+        <div className="flex items-center justify-center h-64 bg-white rounded-lg shadow-md">
+          <p className="text-gray-500">No dashboard data available</p>
+        </div>
+      );
+    }
+
+    const skills_data = jdData.apiResponse.skills_data;
+    const dashboards = [];
+    
+    // If skills_data is empty, show message
+    if (typeof skills_data !== 'object' || Object.keys(skills_data).length === 0) {
+      return (
+        <div className="flex items-center justify-center h-64 bg-white rounded-lg shadow-md">
+          <p className="text-gray-500">No dashboard data found</p>
+        </div>
+      );
+    }
+
+    // Get the first role
+    const roleKey = Object.keys(skills_data)[0];
+    const roleData = skills_data[roleKey];
+    
+    // Define dashboard header style variations for visual appeal
+    const headerStyles = [
+      { bg: "bg-gradient-to-r from-blue-500 to-blue-600", icon: "📊" },
+      { bg: "bg-gradient-to-r from-emerald-500 to-emerald-600", icon: "📈" },
+      { bg: "bg-gradient-to-r from-violet-500 to-violet-600", icon: "🔍" },
+      { bg: "bg-gradient-to-r from-amber-500 to-amber-600", icon: "🎯" },
+      { bg: "bg-gradient-to-r from-rose-500 to-rose-600", icon: "⚙️" },
+      { bg: "bg-gradient-to-r from-cyan-500 to-cyan-600", icon: "💡" },
+      { bg: "bg-gradient-to-r from-indigo-500 to-indigo-600", icon: "🧩" },
+    ];
+    
+    // Render each category as KeySkillsBreakdown
+    let dashboardCounter = 1;
+    for (const category in roleData) {
+      const items = roleData[category];
+      
+      // Skip empty categories
+      if (!items || Object.keys(items).length === 0) {
+        dashboardCounter++;
+        continue;
+      }
+      
+      // Get style for this dashboard
+      const style = headerStyles[(dashboardCounter - 1) % headerStyles.length];
+      
+      // Transform skills data for KeySkillsBreakdown
+      const skillsForComponent = Object.entries(items).map(([name, data]) => ({
+        name,
+        importance: data.importance || 0
+      }));
+      
+      // Add dashboard to list with sophisticated styling
+      dashboards.push(
+        <div key={category} className="bg-white rounded-xl shadow-sm hover:shadow-md transition-shadow duration-300 mb-8 overflow-hidden">
+          <div className={`${style.bg} text-white p-4`}>
+            <div className="flex items-center">
+              <span className="text-xl mr-2">{style.icon}</span>
+              <h3 className="text-lg font-bold">{formatCategoryName(category)}</h3>
+            </div>
+            <div className="text-xs text-white/80 mt-1">
+              {Object.keys(items).length} skills • Dashboard #{dashboardCounter}
+            </div>
+          </div>
+          <KeySkillsBreakdown 
+            skills={skillsForComponent}
+            onMinimize={() => {}}
+            onUpdate={() => {}}
+            viewOnly={true}
+          />
+        </div>
+      );
+      
+      dashboardCounter++;
+    }
+
+    return dashboards;
+  };
+
+  // Add this handler for key skills component
+  const handleShowKeySkills = () => {
+    setShowKeySkills(true);
+    const filtered = ViewItems.filter((item) => item !== "key-skills");
+    setViewItems(filtered);
+  };
+  
+  const handleUpdateKeySkills = () => {
+    console.log("Updating Key Skills");
+    // Add your update logic here
+  };
+  
+  // Sample skills data (you can replace this with real data from your API)
+  const sampleSkills = [
+    { name: "Programming", importance: 35 },
+    { name: "Communication", importance: 20 },
+    { name: "Problem Solving", importance: 15 },
+    { name: "Frontend", importance: 12 },
+    { name: "Backend", importance: 10 },
+    { name: "DevOps", importance: 8 },
+    { name: "Data Analysis", importance: 7 },
+    { name: "UX/UI Design", importance: 6 },
+    { name: "Testing", importance: 5 },
+    { name: "Documentation", importance: 4 }
+  ];
+
+  // Helper function to format category names to a more professional style
+  const formatCategoryName = (category) => {
+    if (!category) return '';
+    
+    // Remove any quotes and underscores
+    const cleaned = category.replace(/["']/g, '').replace(/_/g, ' ');
+    
+    // Capitalize first letter of each word
+    return cleaned
+      .split(' ')
+      .map(word => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
+      .join(' ');
+  };
+
+  return (
+    <div className="flex min-h-screen bg-gray-100">
+      {/* Left sidebar - Always show it */}
+      <div className={`w-64 transition-all duration-300 ${isSidebarOpen ? 'mr-0' : '-ml-64'} bg-white border-r border-gray-200 shadow-md`}>
+                    <Sidebar
+                      roles={roles}
+                      skills_data={skillsData}
+                      samplePrompts={samplePrompts}
+                      sendRangeValue={handleSendRangeValue}
+                      onCreate={handleCreate}
+          sendSelectedRoles={handleSelectedRoles}
+          onRoleSelect={handleRoleSelection}
+          onDashboardUpdate={handleDashboardUpdate}
+          viewOnly={viewOnly}
+                    />
+                  </div>
+
+      {/* Main content */}
+      <div className="flex-1 transition-all duration-300">
+        {/* Toggle sidebar button */}
+        <button
+          onClick={() => setIsSidebarOpen(!isSidebarOpen)}
+          className="fixed left-0 top-1/2 transform -translate-y-1/2 bg-white p-2 rounded-r shadow-md z-10 hover:bg-gray-100"
+        >
+          {isSidebarOpen ? '<' : '>'}
+        </button>
+
+        <div className="container mx-auto py-8 px-4">
+          {viewOnly ? (
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              {renderDashboards()}
+                </div>
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+              {/* Only render components that are toggled to show */}
+              {showThreshold && (
+                <ThresholdScore
+                  onMinimize={handleShowThreshold}
+                  onUpdate={handleUpdateThreshold}
+                  viewOnly={viewOnly}
+                />
+              )}
+              
+              {showJobDescription && (
+                <JobDescription
+                  onMinimize={handleShowJobDescription}
+                  onUpdate={handleUpdateJobDescription}
+                  viewOnly={viewOnly}
+                />
+              )}
+              
+              {showResume && (
+                <Resume
+                  onMinimize={handleShowResume}
+                  onUpdate={handleUpdateResume}
+                  viewOnly={viewOnly}
+                />
+              )}
+              
+              {showKeySkills && (
+                <KeySkillsBreakdown
+                  skills={sampleSkills}
+                  onMinimize={handleShowKeySkills}
+                  onUpdate={handleUpdateKeySkills}
+                  viewOnly={viewOnly}
+                />
+              )}
+              
+              {showCommunicationSkills && (
+                <CommunicationSkills
+                  onMinimize={handleShowCommunicationSkills}
+                  onUpdate={handleUpdateCommunicationSkills}
+                  viewOnly={viewOnly}
+                />
+              )}
+              
+              {showCoding && (
+                <Coding
+                  onMinimize={handleShowCoding}
+                  onUpdate={handleUpdateCoding}
+                  viewOnly={viewOnly}
+                />
+              )}
+              
+              {showBehaviouralSkills && (
+                <BehaviouralSkills
+                  onMinimize={handleShowBehaviouralSkills}
+                  onUpdate={handleUpdateBehaviouralSkills}
+                  viewOnly={viewOnly}
+                />
+              )}
+              
+              {showCommondashBoard && (
+                <CommonDashboard
+                  onMinimize={handleShowCommondashBoard}
+                  onUpdate={handleUpdateCommonDashboard}
+                  viewOnly={viewOnly}
+                />
+              )}
+              
+              {showHrSystem && (
+                <HRSystem
+                  onMinimize={handleShowHrSystem}
+                  onUpdate={handleUpdateHRSystem}
+                  viewOnly={viewOnly}
+                />
+                  )}
+                </div>
+          )}
+              </div>
+            </div>
+    </div>
+  );
+}
+
+const styles = {
+  container: {
+    maxWidth: "100%",
+    padding: "20px",
+    borderRadius: "8px",
+    fontFamily: "Arial, sans-serif",
+  },
+  section: {
+    marginTop: "0px",
+  },
+  subheading: {
+    fontSize: "18px",
+    fontWeight: "bold",
+    marginBottom: "8px",
+  },
+  list: {
+    padding: "0",
+    listStyle: "none",
+  },
+  listItem: {
+    padding: "8px",
+    backgroundColor: "#f4f4f4",
+    borderRadius: "5px",
+    marginBottom: "5px",
+  },
+  chatBox: {
+    height: "100px",
+    overflowY: "auto",
+    backgroundColor: "#f9f9f9",
+    padding: "5px",
+    borderRadius: "5px",
+    border: "1px solid #ddd",
+  },
+  chatMessage: {
+    backgroundColor: "#fff",
+    padding: "5px",
+    borderRadius: "5px",
+    marginBottom: "3px",
+  },
+  input: {
+    flex: "1",
+    padding: "8px",
+    border: "1px solid #ddd",
+    borderRadius: "5px",
+  },
+  button: {
+    marginLeft: "10px",
+    padding: "8px 12px",
+    backgroundColor: "#007BFF",
+    color: "#fff",
+    border: "none",
+    borderRadius: "5px",
+    cursor: "pointer",
+  },
+  notifyButton: {
+    padding: "8px 12px",
+    backgroundColor: "#28a745",
+    color: "#fff",
+    border: "none",
+    borderRadius: "5px",
+    cursor: "pointer",
+  },
+  timeline: {
+    border: '1px solid #ddd',
+    borderRadius: '5px',
+    padding: '10px',
+  },
+  timelineEvent: {
+    display: 'flex',
+    justifyContent: 'space-between',
+    padding: '8px',
+    borderBottom: '1px solid #eee',
+  },
+  auditLog: {
+    maxHeight: '200px',
+    overflowY: 'auto',
+    border: '1px solid #ddd',
+    borderRadius: '5px',
+  },
+  compliance: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '10px',
+  },
+  complianceItem: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '10px',
+  },
+  timelineContainer: {
+    backgroundColor: '#f8f9fa',
+    borderRadius: '10px',
+    padding: '20px',
+    marginBottom: '20px',
+    boxShadow: '0 2px 4px rgba(0,0,0,0.1)',
+  },
+  candidateName: {
+    fontSize: '18px',
+    fontWeight: 'bold',
+    marginBottom: '15px',
+    display: 'flex',
+    alignItems: 'center',
+    gap: '10px',
+  },
+  userIcon: {
+    color: '#2196F3',
+  },
+  timeline: {
+    display: 'flex',
+    justifyContent: 'space-between',
+    position: 'relative',
+    padding: '20px 0',
+  },
+  timelineStage: {
+    display: 'flex',
+    flexDirection: 'column',
+    alignItems: 'center',
+    position: 'relative',
+    flex: 1,
+  },
+  stageConnector: {
+    position: 'absolute',
+    top: '25px',
+    left: '-50%',
+    right: '50%',
+    height: '2px',
+    backgroundColor: '#e0e0e0',
+    zIndex: 1,
+  },
+  stageNode: {
+    width: '40px',
+    height: '40px',
+    borderRadius: '50%',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    position: 'relative',
+    zIndex: 2,
+    transition: 'all 0.3s ease',
+  },
+  stageInfo: {
+    textAlign: 'center',
+    marginTop: '10px',
+  },
+  stageName: {
+    fontWeight: 'bold',
+    fontSize: '14px',
+    color: '#333',
+  },
+  stageDate: {
+    fontSize: '12px',
+    color: '#666',
+    marginTop: '4px',
+  }
+};

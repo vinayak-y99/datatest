@@ -354,18 +354,19 @@ const JobDetailsCard = ({ jobDetails, loading, onClose, isCreating = false, newJ
                                     </div>
                                   </div>
                                 </div>
+                                
                               )}
                               {jobDetails?.threshold_settings && (
                                 <div>
-                                  <h3 className="font-medium text-gray-700 mb-2">Threshold Settings</h3>
-                                  <div className="bg-gray-50 p-3 rounded border border-gray-200">
+                                  {/* <h3 className="font-medium text-gray-700 mb-2">Threshold Settings</h3> */}
+                                  {/* <div className="bg-gray-50 p-3 rounded border border-gray-200">
                                     <div className="grid grid-cols-2 gap-2 text-sm">
                                       <div>Job Match Benchmark: {jobDetails.threshold_settings.job_match_benchmark}%</div>
                                       <div>High Score Threshold: {jobDetails.threshold_settings.high_score_threshold}%</div>
                                       <div>High Match Threshold: {jobDetails.threshold_settings.high_match_threshold}%</div>
                                       <div>Mid Score Threshold: {jobDetails.threshold_settings.mid_score_threshold}%</div>
                                     </div>
-                                  </div>
+                                  </div> */}
                                 </div>
                               )}
                             </div>

@@ -6,6 +6,331 @@ import RightSidebar from './rightsidebar';
 import Link from 'next/link';
 import { FaCheckCircle, FaHourglassHalf, FaUserTie, FaChartBar, FaChartPie, FaStar, FaArrowUp, FaBars, FaSort } from 'react-icons/fa';
 
+// Fixed KeySkillsWaterfall component based on the FixedWaterfallChart implementation
+const KeySkillsWaterfall = ({ skills: initialSkills, onMinimize, onUpdate, viewOnly }) => {
+  // Process skills data for waterfall visualization
+  const processSkills = (skillsData) => {
+    if (!skillsData || !Array.isArray(skillsData) || skillsData.length === 0) {
+      // Default skills if none provided
+      return [
+        { name: "Prod A", importance: 62, color: "bg-blue-400" },
+        { name: "Prod B", importance: 12, color: "bg-red-400" },
+        { name: "Prod C", importance: 12, color: "bg-green-400" },
+        { name: "Prod D", importance: 10, color: "bg-yellow-400" },
+        { name: "Other", importance: 4, color: "bg-gray-400" }
+      ].sort((a, b) => b.importance - a.importance);
+    }
+
+    // Define color classes for skills
+    const colorClasses = [
+      "bg-blue-400", 
+      "bg-red-400",
+      "bg-green-400", 
+      "bg-yellow-400",
+      "bg-purple-400",
+      "bg-indigo-400",
+      "bg-pink-400",
+      "bg-sky-400"
+    ];
+
+    // Process and sort skills by importance
+    return skillsData
+      .map((skill, index) => ({
+        ...skill,
+        color: colorClasses[index % colorClasses.length]
+      }))
+      .sort((a, b) => b.importance - a.importance);
+  };
+
+  const sortedSkills = processSkills(initialSkills);
+
+  // Animation states
+  // 0=initial, 1=growing segmented line, 2=fully grown line, 3=breaking down to rows
+  const [animationStage, setAnimationStage] = useState(0);
+  const [growProgress, setGrowProgress] = useState(0);
+  const [breakdownProgress, setBreakdownProgress] = useState(0);
+  const [visibleSkills, setVisibleSkills] = useState([]);
+  
+  // Calculate cumulative positions for skills
+  const positionedSkills = (() => {
+    let runningTotal = 0;
+    return sortedSkills.map(skill => {
+      const startPos = runningTotal;
+      runningTotal += skill.importance;
+      return {
+        ...skill,
+        startPos,
+        endPos: runningTotal
+      };
+    });
+  })();
+
+  // Animation sequence
+  useEffect(() => {
+    // Reset animation
+    setAnimationStage(0);
+    setGrowProgress(0);
+    setBreakdownProgress(0);
+    setVisibleSkills([]);
+    
+    // Start growing the segmented line
+    setAnimationStage(1);
+    
+    // Animate line growth from 0 to 100%
+    const growDuration = 1500; // 1.5 seconds
+    const growFrames = 60; // 60 steps
+    const growInterval = growDuration / growFrames;
+    let currentGrowth = 0;
+    
+    const growthAnimation = setInterval(() => {
+      currentGrowth += (100 / growFrames);
+      if (currentGrowth >= 100) {
+        currentGrowth = 100;
+        clearInterval(growthAnimation);
+        
+        // Line is fully grown
+        setAnimationStage(2);
+        
+        // Wait briefly before breaking into rows
+        setTimeout(() => {
+          setAnimationStage(3);
+          
+          // Start breakdown animation
+          const breakdownDuration = 1200; // 1.2 seconds
+          const breakdownFrames = 60; // 60 steps
+          const breakdownInterval = breakdownDuration / breakdownFrames;
+          let currentBreakdown = 0;
+          
+          const breakdownAnimation = setInterval(() => {
+            currentBreakdown += (100 / breakdownFrames);
+            if (currentBreakdown >= 100) {
+              currentBreakdown = 100;
+              clearInterval(breakdownAnimation);
+              
+              // After breakdown is complete, show details
+              let currentDelay = 300;
+              positionedSkills.forEach((skill, index) => {
+                setTimeout(() => {
+                  setVisibleSkills(prev => [...prev, skill]);
+                }, currentDelay);
+                currentDelay += 200; // Stagger each skill info animation
+              });
+            }
+            setBreakdownProgress(currentBreakdown);
+          }, breakdownInterval);
+          
+        }, 500);
+      }
+      setGrowProgress(currentGrowth);
+    }, growInterval);
+    
+    return () => {
+      clearInterval(growthAnimation);
+    };
+  }, [initialSkills]);
+
+  const restartAnimation = () => {
+    // Clear everything
+    setAnimationStage(0);
+    setGrowProgress(0);
+    setBreakdownProgress(0);
+    setVisibleSkills([]);
+    
+    // Start new animation after a brief delay
+    setTimeout(() => {
+      // Start new growth animation
+      setAnimationStage(1);
+      
+      const growDuration = 1500;
+      const growFrames = 60;
+      const growInterval = growDuration / growFrames;
+      let currentGrowth = 0;
+      
+      const growthAnimation = setInterval(() => {
+        currentGrowth += (100 / growFrames);
+        if (currentGrowth >= 100) {
+          currentGrowth = 100;
+          clearInterval(growthAnimation);
+          setAnimationStage(2);
+          
+          setTimeout(() => {
+            setAnimationStage(3);
+            
+            // Start breakdown animation
+            const breakdownDuration = 1200;
+            const breakdownFrames = 60;
+            const breakdownInterval = breakdownDuration / breakdownFrames;
+            let currentBreakdown = 0;
+            
+            const breakdownAnimation = setInterval(() => {
+              currentBreakdown += (100 / breakdownFrames);
+              if (currentBreakdown >= 100) {
+                currentBreakdown = 100;
+                clearInterval(breakdownAnimation);
+                
+                // After breakdown is complete, show details
+                let currentDelay = 300;
+                positionedSkills.forEach((skill, index) => {
+                  setTimeout(() => {
+                    setVisibleSkills(prev => [...prev, skill]);
+                  }, currentDelay);
+                  currentDelay += 200;
+                });
+              }
+              setBreakdownProgress(currentBreakdown);
+            }, breakdownInterval);
+            
+          }, 500);
+        }
+        setGrowProgress(currentGrowth);
+      }, growInterval);
+    }, 300);
+  };
+
+  // Enhanced style for better visual appeal
+  const lineHeight = '3px'; // Thicker line for better visibility
+  const glowStyle = (color) => `0 0 8px 2px ${color.replace('bg-', 'rgba(').replace('400', '1, 0.6)')}`;
+
+  // Calculate vertical positions for animation with more spacing
+  const calculateVerticalOffset = (index) => {
+    if (animationStage < 3) return 0;
+    
+    const baseOffset = 50; // Increased spacing between rows
+    const spacing = index * baseOffset;
+    const progressOffset = (breakdownProgress / 100) * spacing;
+    return progressOffset;
+  };
+
+  // Define keyframe animation for stronger glow pulse effect
+  const glowKeyframes = `
+    @keyframes enhancedGlow {
+      0% { filter: drop-shadow(0 0 2px rgba(0,0,0,0.1)); }
+      50% { filter: drop-shadow(0 0 10px var(--glow-color)); }
+      100% { filter: drop-shadow(0 0 2px rgba(0,0,0,0.1)); }
+    }
+  `;
+
+  return (
+    <div className="bg-white p-5 rounded-lg shadow-lg border border-gray-100">
+      <style>{glowKeyframes}</style>
+      <div className="flex justify-between items-center mb-6">
+        <div className="flex space-x-2">
+          {!viewOnly && (
+            <button onClick={onUpdate} className="text-blue-500 hover:text-blue-700 font-medium">Update</button>
+          )}
+        </div>
+      </div>
+
+      <div className="p-3">
+        {/* Segmented line at the top - visible only in stages 1-2 */}
+        {(animationStage <= 2) && (
+          <div className="mb-20 transition-all duration-500">
+            <div className="w-full bg-gray-200 rounded-full h-1 relative">
+              {positionedSkills.map((skill, index) => (
+                <div 
+                  key={index}
+                  className={`${skill.color} rounded-full absolute top-0 transition-all duration-300 ease-out`}
+                  style={{
+                    left: `${skill.startPos}%`,
+                    width: `${Math.min(skill.importance, (growProgress - skill.startPos > 0 ? growProgress - skill.startPos : 0))}%`,
+                    maxWidth: `${skill.importance}%`,
+                    height: '2px',
+                    boxShadow: glowStyle(skill.color),
+                    '--glow-color': skill.color.replace('bg-', 'rgba(').replace('400', '1, 0.6)'),
+                    animation: growProgress >= skill.startPos ? 'enhancedGlow 3s infinite alternate' : 'none'
+                  }}
+                />
+              ))}
+            </div>
+          </div>
+        )}
+        
+        {/* Transition elements that animate from the top line to individual rows */}
+        {animationStage === 3 && (
+          <div className="relative" style={{ height: `${calculateVerticalOffset(positionedSkills.length) + 100}px` }}>
+            {/* Container for the transitioning lines */}
+            <div className="w-full bg-gray-200 rounded-full h-1 mb-6 relative">
+              {positionedSkills.map((skill, index) => {
+                const verticalOffset = calculateVerticalOffset(index);
+                const isVisible = visibleSkills.some(s => s.name === skill.name);
+                
+                return (
+                  <React.Fragment key={index}>
+                    {/* Colored segment that moves downward */}
+                    <div 
+                      className={`${skill.color} rounded-full absolute transition-all duration-500 ease-in-out`}
+                      style={{
+                        left: `${skill.startPos}%`,
+                        top: `${verticalOffset}px`,
+                        width: `${skill.importance}%`,
+                        height: '2px',
+                        boxShadow: glowStyle(skill.color),
+                        '--glow-color': skill.color.replace('bg-', 'rgba(').replace('400', '1, 0.6)'),
+                        animation: 'enhancedGlow 3s infinite alternate',
+                        opacity: 1,
+                        zIndex: positionedSkills.length - index
+                      }}
+                    />
+                    
+                    {/* Background line that fades in at row position */}
+                    {breakdownProgress > 50 && (
+                      <div 
+                        className="bg-gray-200 rounded-full absolute transition-opacity duration-500"
+                        style={{
+                          left: '0%',
+                          top: `${verticalOffset}px`,
+                          width: '100%',
+                          height: '2px',
+                          opacity: breakdownProgress > 50 ? (breakdownProgress - 50) / 50 : 0
+                        }}
+                      />
+                    )}
+                    
+                    {/* Text labels that fade in only after completion */}
+                    {breakdownProgress > 80 && (
+                      <div 
+                        className="absolute transition-opacity duration-300 flex justify-between w-full"
+                        style={{
+                          top: `${verticalOffset - 28}px`,
+                          opacity: isVisible ? 1 : 0
+                        }}
+                      >
+                        <span className="text-base font-medium text-gray-800">{skill.name}</span>
+                        <span className="text-base text-gray-700 font-medium">
+                          {isVisible ? `${Math.round(skill.importance)}%` : ''}
+                        </span>
+                      </div>
+                    )}
+                  </React.Fragment>
+                );
+              })}
+            </div>
+            
+            {/* Scale markers that fade during transition */}
+            <div 
+              className="flex justify-between text-xs text-gray-500 mt-2 transition-opacity duration-1000"
+              style={{ opacity: 1 - (breakdownProgress / 100) }}
+            >
+            </div>
+            
+            {/* New scale markers that fade in at bottom */}
+            {breakdownProgress > 80 && (
+              <div 
+                className="flex justify-between text-xs text-gray-500 transition-opacity duration-500 absolute left-0 right-0"
+                style={{ 
+                  bottom: 0, 
+                  opacity: (breakdownProgress - 80) / 20
+                }}
+              >
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+};
+
 // Sample Prompts Component
 const SamplePrompts = ({ prompts }) => {
   if (!prompts ||!Array.isArray(prompts) || prompts.length === 0) {
@@ -134,183 +459,6 @@ const HRSystem = ({ onMinimize, onUpdate, viewOnly }) => (
     <div>HR System Content</div>
   </div>
 );
-
-// Add this component after the existing dashboard components
-const KeySkillsBreakdown = ({ skills, onMinimize, onUpdate, viewOnly }) => {
-  // Animation states
-  const [animationStage, setAnimationStage] = useState(0);
-  const [visibleSkills, setVisibleSkills] = useState([]);
-  const [hoveredSkill, setHoveredSkill] = useState(null);
-
-  // Process skills data for waterfall visualization
-  const processSkills = (skillsData) => {
-    if (!skillsData || !Array.isArray(skillsData) || skillsData.length === 0) {
-      // Default skills if none provided
-      return [
-        { name: "Prod A", importance: 62, color: "from-blue-400 to-blue-500" },
-        { name: "Prod B", importance: 12, color: "from-rose-400 to-rose-500" },
-        { name: "Prod C", importance: 12, color: "from-emerald-400 to-emerald-500" },
-        { name: "Prod D", importance: 10, color: "from-amber-400 to-amber-500" },
-        { name: "Other", importance: 4, color: "from-indigo-400 to-indigo-500" }
-      ].sort((a, b) => b.importance - a.importance);
-    }
-
-    // Define color palette for skills - using gradient pairs for elegance
-    const colorClasses = [
-      "from-blue-400 to-blue-500", 
-      "from-rose-400 to-rose-500",
-      "from-emerald-400 to-emerald-500", 
-      "from-amber-400 to-amber-500",
-      "from-indigo-400 to-indigo-500",
-      "from-purple-400 to-purple-500",
-      "from-teal-400 to-teal-500",
-      "from-orange-400 to-orange-500",
-      "from-cyan-400 to-cyan-500",
-      "from-pink-400 to-pink-500",
-      "from-lime-400 to-lime-500",
-      "from-violet-400 to-violet-500",
-      "from-fuchsia-400 to-fuchsia-500",
-      "from-sky-400 to-sky-500",
-      "from-slate-400 to-slate-500"
-    ];
-
-    // Process and sort skills by importance
-    return skillsData
-      .map((skill, index) => ({
-        ...skill,
-        color: colorClasses[index % colorClasses.length],
-        dotColor: colorClasses[index % colorClasses.length].split(' ')[0].replace('from-', 'bg-'),
-        glowColor: colorClasses[index % colorClasses.length].includes('blue') ? 'rgba(59, 130, 246, 0.5)' : 
-                   colorClasses[index % colorClasses.length].includes('rose') ? 'rgba(244, 63, 94, 0.5)' :
-                   colorClasses[index % colorClasses.length].includes('emerald') ? 'rgba(16, 185, 129, 0.5)' :
-                   colorClasses[index % colorClasses.length].includes('amber') ? 'rgba(245, 158, 11, 0.5)' :
-                   colorClasses[index % colorClasses.length].includes('indigo') ? 'rgba(99, 102, 241, 0.5)' :
-                   colorClasses[index % colorClasses.length].includes('purple') ? 'rgba(168, 85, 247, 0.5)' :
-                   colorClasses[index % colorClasses.length].includes('teal') ? 'rgba(20, 184, 166, 0.5)' :
-                   colorClasses[index % colorClasses.length].includes('orange') ? 'rgba(249, 115, 22, 0.5)' :
-                   colorClasses[index % colorClasses.length].includes('cyan') ? 'rgba(6, 182, 212, 0.5)' :
-                   colorClasses[index % colorClasses.length].includes('pink') ? 'rgba(236, 72, 153, 0.5)' :
-                   'rgba(99, 102, 241, 0.5)'
-      }))
-      .sort((a, b) => b.importance - a.importance);
-  };
-
-  const sortedSkills = processSkills(skills);
-
-  // Calculate cumulative positions for skills
-  const calculatePositions = () => {
-    let runningTotal = 0;
-    return sortedSkills.map(skill => {
-      const startPos = runningTotal;
-      runningTotal += skill.importance;
-      return {
-        ...skill,
-        startPos,
-        endPos: runningTotal
-      };
-    });
-  };
-
-  const positionedSkills = calculatePositions();
-
-  // Animation effect
-  useEffect(() => {
-    setVisibleSkills([]);
-    
-    const timer1 = setTimeout(() => {
-      setAnimationStage(1);
-    }, 200);
-    
-    // Add skills one by one
-    let currentDelay = 400;
-    const skillTimers = positionedSkills.map((skill, index) => {
-      const timer = setTimeout(() => {
-        setVisibleSkills(prev => [...prev, skill]);
-      }, currentDelay);
-      currentDelay += 180; // Stagger each skill animation
-      return timer;
-    });
-    
-    return () => {
-      clearTimeout(timer1);
-      skillTimers.forEach(timer => clearTimeout(timer));
-    };
-  }, [skills]);
-
-  const barHeight = 3; // Slightly thicker for more visual presence
-
-  // Define keyframe animation for the glow pulse effect
-  const pulseKeyframes = `
-    @keyframes glowPulse {
-      0% { filter: drop-shadow(0 0 1px transparent); }
-      50% { filter: drop-shadow(0 0 3px var(--glow-color)); }
-      100% { filter: drop-shadow(0 0 1px transparent); }
-    }
-  `;
-
-  return (
-    <div className="bg-white p-6 rounded-lg">
-      <style>{pulseKeyframes}</style>
-      {/* Individual elegant bars */}
-      <div className="space-y-5">
-        {positionedSkills.map((skill, index) => {
-          const isVisible = visibleSkills.some(s => s.name === skill.name);
-          const isHovered = hoveredSkill === skill.name;
-          
-          return (
-            <div 
-              key={index} 
-              className="relative transition-all duration-300"
-              onMouseEnter={() => setHoveredSkill(skill.name)}
-              onMouseLeave={() => setHoveredSkill(null)}
-            >
-              {/* Skill name and percentage */}
-              <div className="flex justify-between mb-2">
-                <div className="flex items-center">
-                  <div className={`w-2.5 h-2.5 rounded-full mr-2 ${skill.dotColor}`}></div>
-                  <span className={`text-sm font-medium ${isHovered ? 'text-gray-900' : 'text-gray-700'} transition-colors duration-300`}>
-                    {skill.name}
-                  </span>
-                </div>
-                <span className={`text-sm ${isHovered ? 'text-gray-900 font-medium' : 'text-gray-500'} transition-colors duration-300`}>
-                  {isVisible ? `${Math.round(skill.importance)}%` : ''}
-                </span>
-              </div>
-              
-              {/* Beautiful track with subtle shadow */}
-              <div className="w-full bg-gray-100 rounded-full h-2 relative shadow-inner">
-                {/* Gradient bar with shadow and glow */}
-                <div 
-                  className={`bg-gradient-to-r ${skill.color} rounded-full transition-all duration-700 ease-out absolute top-0 shadow-sm 
-                    ${isHovered ? 'shadow-md brightness-110' : ''}`}
-                  style={{
-                    left: `${skill.startPos}%`,
-                    width: isVisible ? `${skill.importance}%` : '0%',
-                    height: `${isHovered ? barHeight + 1 : barHeight}px`,
-                    transform: isHovered ? 'translateY(-0.5px)' : 'none',
-                    animation: isVisible ? `${isHovered ? 'glowPulse 1.5s infinite' : 'glowPulse 3s infinite'} alternate` : 'none',
-                    '--glow-color': skill.glowColor,
-                    filter: isHovered ? `drop-shadow(0 0 3px ${skill.glowColor})` : `drop-shadow(0 0 1px ${skill.glowColor})`
-                  }}
-                />
-              </div>
-              
-              {/* Show value bubble on hover */}
-              {isHovered && isVisible && (
-                <div 
-                  className="absolute top-0 transform -translate-y-full px-2 py-1 bg-white text-xs text-gray-700 font-medium rounded-md shadow-md border border-gray-100 transition-opacity duration-200 opacity-100 mt-1"
-                  style={{ left: `${skill.startPos + (skill.importance / 2)}%`, transform: 'translateX(-50%) translateY(-100%)' }}
-                >
-                  {skill.startPos}% - {skill.endPos}%
-                </div>
-              )}
-            </div>
-          );
-        })}
-      </div>
-    </div>
-  );
-};
 
 export default function Threshold({ jdData = {}, jdId, thresholdId, onDataChange, onClose, viewOnly = false }) {
   // Debug the incoming props
@@ -675,7 +823,7 @@ export default function Threshold({ jdData = {}, jdId, thresholdId, onDataChange
       { bg: "bg-gradient-to-r from-indigo-500 to-indigo-600", icon: "🧩" },
     ];
     
-    // Render each category as KeySkillsBreakdown
+    // Render each category as KeySkillsWaterfall
     let dashboardCounter = 1;
     for (const category in roleData) {
       const items = roleData[category];
@@ -689,7 +837,7 @@ export default function Threshold({ jdData = {}, jdId, thresholdId, onDataChange
       // Get style for this dashboard
       const style = headerStyles[(dashboardCounter - 1) % headerStyles.length];
       
-      // Transform skills data for KeySkillsBreakdown
+      // Transform skills data for KeySkillsWaterfall
       const skillsForComponent = Object.entries(items).map(([name, data]) => ({
         name,
         importance: data.importance || 0
@@ -701,13 +849,13 @@ export default function Threshold({ jdData = {}, jdId, thresholdId, onDataChange
           <div className={`${style.bg} text-white p-4`}>
             <div className="flex items-center">
               <span className="text-xl mr-2">{style.icon}</span>
-              <h3 className="text-lg font-bold">{category}</h3>
+              <h3 className="text-lg font-bold">{formatCategoryName(category)}</h3>
             </div>
             <div className="text-xs text-white/80 mt-1">
               {Object.keys(items).length} skills • Dashboard #{dashboardCounter}
             </div>
           </div>
-          <KeySkillsBreakdown 
+          <KeySkillsWaterfall
             skills={skillsForComponent}
             onMinimize={() => {}}
             onUpdate={() => {}}
@@ -747,6 +895,20 @@ export default function Threshold({ jdData = {}, jdId, thresholdId, onDataChange
     { name: "Testing", importance: 5 },
     { name: "Documentation", importance: 4 }
   ];
+
+  // Helper function to format category names to a more professional style
+  const formatCategoryName = (category) => {
+    if (!category) return '';
+    
+    // Remove any quotes and underscores
+    const cleaned = category.replace(/["']/g, '').replace(/_/g, ' ');
+    
+    // Capitalize first letter of each word
+    return cleaned
+      .split(' ')
+      .map(word => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
+      .join(' ');
+  };
 
   return (
     <div className="flex min-h-screen bg-gray-100">
@@ -808,7 +970,7 @@ export default function Threshold({ jdData = {}, jdId, thresholdId, onDataChange
               )}
               
               {showKeySkills && (
-                <KeySkillsBreakdown
+                <KeySkillsWaterfall
                   skills={sampleSkills}
                   onMinimize={handleShowKeySkills}
                   onUpdate={handleUpdateKeySkills}
