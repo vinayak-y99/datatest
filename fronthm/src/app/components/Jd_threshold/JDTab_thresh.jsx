@@ -1182,6 +1182,7 @@ const JDTab = ({ jdList, setJdList, setSelectedJDForSidebar }) => {
           jobId={selectedJD.job_id}
           thresholdId={selectedJD.id}
           onClose={handleDrawerClose}
+          viewOnly={true}
         />
       )}
       

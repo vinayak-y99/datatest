@@ -4,7 +4,7 @@ import React, { useState, useEffect } from "react";
 import Sidebar from "./sidebarView";
 import RightSidebar from './rightsidebar';
 import Link from 'next/link';
-import { FaCheckCircle, FaHourglassHalf, FaUserTie } from 'react-icons/fa';
+import { FaCheckCircle, FaHourglassHalf, FaUserTie, FaChartBar, FaChartPie, FaStar, FaArrowUp, FaBars, FaSort } from 'react-icons/fa';
 
 // Sample Prompts Component
 const SamplePrompts = ({ prompts }) => {
@@ -15,12 +15,14 @@ const SamplePrompts = ({ prompts }) => {
 
 // Placeholder components for the dashboard items
 // Modify the ThresholdScore component (and do the same for all other components)
-const ThresholdScore = ({ onMinimize, onUpdate }) => (
+const ThresholdScore = ({ onMinimize, onUpdate, viewOnly }) => (
   <div className="bg-white p-4 rounded-lg shadow">
     <div className="flex justify-between items-center mb-4">
       <h3 className="text-lg font-semibold">Threshold Score</h3>
       <div className="flex space-x-2">
+        {!viewOnly && (
         <button onClick={onUpdate} className="text-blue-500 hover:text-blue-700">Update</button>
+        )}
         <button onClick={onMinimize} className="text-gray-500 hover:text-gray-700">Minimize</button>
       </div>
     </div>
@@ -28,12 +30,14 @@ const ThresholdScore = ({ onMinimize, onUpdate }) => (
   </div>
 );
 
-const JobDescription = ({ onMinimize, onUpdate }) => (
+const JobDescription = ({ onMinimize, onUpdate, viewOnly }) => (
   <div className="bg-white p-4 rounded-lg shadow">
     <div className="flex justify-between items-center mb-4">
       <h3 className="text-lg font-semibold">Job Description</h3>
       <div className="flex space-x-2">
+        {!viewOnly && (
         <button onClick={onUpdate} className="text-blue-500 hover:text-blue-700">Update</button>
+        )}
         <button onClick={onMinimize} className="text-gray-500 hover:text-gray-700">Minimize</button>
       </div>
     </div>
@@ -41,12 +45,14 @@ const JobDescription = ({ onMinimize, onUpdate }) => (
   </div>
 );
 
-const Resume = ({ onMinimize, onUpdate }) => (
+const Resume = ({ onMinimize, onUpdate, viewOnly }) => (
   <div className="bg-white p-4 rounded-lg shadow">
     <div className="flex justify-between items-center mb-4">
       <h3 className="text-lg font-semibold">Resume</h3>
       <div className="flex space-x-2">
+        {!viewOnly && (
         <button onClick={onUpdate} className="text-blue-500 hover:text-blue-700">Update</button>
+        )}
         <button onClick={onMinimize} className="text-gray-500 hover:text-gray-700">Minimize</button>
       </div>
     </div>
@@ -54,12 +60,14 @@ const Resume = ({ onMinimize, onUpdate }) => (
   </div>
 );
 
-const CommunicationSkills = ({ onMinimize, onUpdate }) => (
+const CommunicationSkills = ({ onMinimize, onUpdate, viewOnly }) => (
   <div className="bg-white p-4 rounded-lg shadow">
     <div className="flex justify-between items-center mb-4">
       <h3 className="text-lg font-semibold">Communication Skills</h3>
       <div className="flex space-x-2">
+        {!viewOnly && (
         <button onClick={onUpdate} className="text-blue-500 hover:text-blue-700">Update</button>
+        )}
         <button onClick={onMinimize} className="text-gray-500 hover:text-gray-700">Minimize</button>
       </div>
     </div>
@@ -67,12 +75,14 @@ const CommunicationSkills = ({ onMinimize, onUpdate }) => (
   </div>
 );
 
-const Coding = ({ onMinimize, onUpdate }) => (
+const Coding = ({ onMinimize, onUpdate, viewOnly }) => (
   <div className="bg-white p-4 rounded-lg shadow">
     <div className="flex justify-between items-center mb-4">
       <h3 className="text-lg font-semibold">Coding</h3>
       <div className="flex space-x-2">
+        {!viewOnly && (
         <button onClick={onUpdate} className="text-blue-500 hover:text-blue-700">Update</button>
+        )}
         <button onClick={onMinimize} className="text-gray-500 hover:text-gray-700">Minimize</button>
       </div>
     </div>
@@ -80,12 +90,14 @@ const Coding = ({ onMinimize, onUpdate }) => (
   </div>
 );
 
-const BehaviouralSkills = ({ onMinimize, onUpdate }) => (
+const BehaviouralSkills = ({ onMinimize, onUpdate, viewOnly }) => (
   <div className="bg-white p-4 rounded-lg shadow">
     <div className="flex justify-between items-center mb-4">
       <h3 className="text-lg font-semibold">Behavioural Skills</h3>
       <div className="flex space-x-2">
+        {!viewOnly && (
         <button onClick={onUpdate} className="text-blue-500 hover:text-blue-700">Update</button>
+        )}
         <button onClick={onMinimize} className="text-gray-500 hover:text-gray-700">Minimize</button>
       </div>
     </div>
@@ -93,12 +105,14 @@ const BehaviouralSkills = ({ onMinimize, onUpdate }) => (
   </div>
 );
 
-const CommonDashboard = ({ onMinimize, onUpdate }) => (
+const CommonDashboard = ({ onMinimize, onUpdate, viewOnly }) => (
   <div className="bg-white p-4 rounded-lg shadow">
     <div className="flex justify-between items-center mb-4">
       <h3 className="text-lg font-semibold">Common Dashboard</h3>
       <div className="flex space-x-2">
+        {!viewOnly && (
         <button onClick={onUpdate} className="text-blue-500 hover:text-blue-700">Update</button>
+        )}
         <button onClick={onMinimize} className="text-gray-500 hover:text-gray-700">Minimize</button>
       </div>
     </div>
@@ -106,12 +120,14 @@ const CommonDashboard = ({ onMinimize, onUpdate }) => (
   </div>
 );
 
-const HRSystem = ({ onMinimize, onUpdate }) => (
+const HRSystem = ({ onMinimize, onUpdate, viewOnly }) => (
   <div className="bg-white p-4 rounded-lg shadow">
     <div className="flex justify-between items-center mb-4">
       <h3 className="text-lg font-semibold">HR System</h3>
       <div className="flex space-x-2">
+        {!viewOnly && (
         <button onClick={onUpdate} className="text-blue-500 hover:text-blue-700">Update</button>
+        )}
         <button onClick={onMinimize} className="text-gray-500 hover:text-gray-700">Minimize</button>
       </div>
     </div>
@@ -119,7 +135,184 @@ const HRSystem = ({ onMinimize, onUpdate }) => (
   </div>
 );
 
-export default function Threshold({ jdData = {}, jdId, thresholdId, onDataChange, onClose }) {
+// Add this component after the existing dashboard components
+const KeySkillsBreakdown = ({ skills, onMinimize, onUpdate, viewOnly }) => {
+  // Animation states
+  const [animationStage, setAnimationStage] = useState(0);
+  const [visibleSkills, setVisibleSkills] = useState([]);
+  const [hoveredSkill, setHoveredSkill] = useState(null);
+
+  // Process skills data for waterfall visualization
+  const processSkills = (skillsData) => {
+    if (!skillsData || !Array.isArray(skillsData) || skillsData.length === 0) {
+      // Default skills if none provided
+      return [
+        { name: "Prod A", importance: 62, color: "from-blue-400 to-blue-500" },
+        { name: "Prod B", importance: 12, color: "from-rose-400 to-rose-500" },
+        { name: "Prod C", importance: 12, color: "from-emerald-400 to-emerald-500" },
+        { name: "Prod D", importance: 10, color: "from-amber-400 to-amber-500" },
+        { name: "Other", importance: 4, color: "from-indigo-400 to-indigo-500" }
+      ].sort((a, b) => b.importance - a.importance);
+    }
+
+    // Define color palette for skills - using gradient pairs for elegance
+    const colorClasses = [
+      "from-blue-400 to-blue-500", 
+      "from-rose-400 to-rose-500",
+      "from-emerald-400 to-emerald-500", 
+      "from-amber-400 to-amber-500",
+      "from-indigo-400 to-indigo-500",
+      "from-purple-400 to-purple-500",
+      "from-teal-400 to-teal-500",
+      "from-orange-400 to-orange-500",
+      "from-cyan-400 to-cyan-500",
+      "from-pink-400 to-pink-500",
+      "from-lime-400 to-lime-500",
+      "from-violet-400 to-violet-500",
+      "from-fuchsia-400 to-fuchsia-500",
+      "from-sky-400 to-sky-500",
+      "from-slate-400 to-slate-500"
+    ];
+
+    // Process and sort skills by importance
+    return skillsData
+      .map((skill, index) => ({
+        ...skill,
+        color: colorClasses[index % colorClasses.length],
+        dotColor: colorClasses[index % colorClasses.length].split(' ')[0].replace('from-', 'bg-'),
+        glowColor: colorClasses[index % colorClasses.length].includes('blue') ? 'rgba(59, 130, 246, 0.5)' : 
+                   colorClasses[index % colorClasses.length].includes('rose') ? 'rgba(244, 63, 94, 0.5)' :
+                   colorClasses[index % colorClasses.length].includes('emerald') ? 'rgba(16, 185, 129, 0.5)' :
+                   colorClasses[index % colorClasses.length].includes('amber') ? 'rgba(245, 158, 11, 0.5)' :
+                   colorClasses[index % colorClasses.length].includes('indigo') ? 'rgba(99, 102, 241, 0.5)' :
+                   colorClasses[index % colorClasses.length].includes('purple') ? 'rgba(168, 85, 247, 0.5)' :
+                   colorClasses[index % colorClasses.length].includes('teal') ? 'rgba(20, 184, 166, 0.5)' :
+                   colorClasses[index % colorClasses.length].includes('orange') ? 'rgba(249, 115, 22, 0.5)' :
+                   colorClasses[index % colorClasses.length].includes('cyan') ? 'rgba(6, 182, 212, 0.5)' :
+                   colorClasses[index % colorClasses.length].includes('pink') ? 'rgba(236, 72, 153, 0.5)' :
+                   'rgba(99, 102, 241, 0.5)'
+      }))
+      .sort((a, b) => b.importance - a.importance);
+  };
+
+  const sortedSkills = processSkills(skills);
+
+  // Calculate cumulative positions for skills
+  const calculatePositions = () => {
+    let runningTotal = 0;
+    return sortedSkills.map(skill => {
+      const startPos = runningTotal;
+      runningTotal += skill.importance;
+      return {
+        ...skill,
+        startPos,
+        endPos: runningTotal
+      };
+    });
+  };
+
+  const positionedSkills = calculatePositions();
+
+  // Animation effect
+  useEffect(() => {
+    setVisibleSkills([]);
+    
+    const timer1 = setTimeout(() => {
+      setAnimationStage(1);
+    }, 200);
+    
+    // Add skills one by one
+    let currentDelay = 400;
+    const skillTimers = positionedSkills.map((skill, index) => {
+      const timer = setTimeout(() => {
+        setVisibleSkills(prev => [...prev, skill]);
+      }, currentDelay);
+      currentDelay += 180; // Stagger each skill animation
+      return timer;
+    });
+    
+    return () => {
+      clearTimeout(timer1);
+      skillTimers.forEach(timer => clearTimeout(timer));
+    };
+  }, [skills]);
+
+  const barHeight = 3; // Slightly thicker for more visual presence
+
+  // Define keyframe animation for the glow pulse effect
+  const pulseKeyframes = `
+    @keyframes glowPulse {
+      0% { filter: drop-shadow(0 0 1px transparent); }
+      50% { filter: drop-shadow(0 0 3px var(--glow-color)); }
+      100% { filter: drop-shadow(0 0 1px transparent); }
+    }
+  `;
+
+  return (
+    <div className="bg-white p-6 rounded-lg">
+      <style>{pulseKeyframes}</style>
+      {/* Individual elegant bars */}
+      <div className="space-y-5">
+        {positionedSkills.map((skill, index) => {
+          const isVisible = visibleSkills.some(s => s.name === skill.name);
+          const isHovered = hoveredSkill === skill.name;
+          
+          return (
+            <div 
+              key={index} 
+              className="relative transition-all duration-300"
+              onMouseEnter={() => setHoveredSkill(skill.name)}
+              onMouseLeave={() => setHoveredSkill(null)}
+            >
+              {/* Skill name and percentage */}
+              <div className="flex justify-between mb-2">
+                <div className="flex items-center">
+                  <div className={`w-2.5 h-2.5 rounded-full mr-2 ${skill.dotColor}`}></div>
+                  <span className={`text-sm font-medium ${isHovered ? 'text-gray-900' : 'text-gray-700'} transition-colors duration-300`}>
+                    {skill.name}
+                  </span>
+                </div>
+                <span className={`text-sm ${isHovered ? 'text-gray-900 font-medium' : 'text-gray-500'} transition-colors duration-300`}>
+                  {isVisible ? `${Math.round(skill.importance)}%` : ''}
+                </span>
+              </div>
+              
+              {/* Beautiful track with subtle shadow */}
+              <div className="w-full bg-gray-100 rounded-full h-2 relative shadow-inner">
+                {/* Gradient bar with shadow and glow */}
+                <div 
+                  className={`bg-gradient-to-r ${skill.color} rounded-full transition-all duration-700 ease-out absolute top-0 shadow-sm 
+                    ${isHovered ? 'shadow-md brightness-110' : ''}`}
+                  style={{
+                    left: `${skill.startPos}%`,
+                    width: isVisible ? `${skill.importance}%` : '0%',
+                    height: `${isHovered ? barHeight + 1 : barHeight}px`,
+                    transform: isHovered ? 'translateY(-0.5px)' : 'none',
+                    animation: isVisible ? `${isHovered ? 'glowPulse 1.5s infinite' : 'glowPulse 3s infinite'} alternate` : 'none',
+                    '--glow-color': skill.glowColor,
+                    filter: isHovered ? `drop-shadow(0 0 3px ${skill.glowColor})` : `drop-shadow(0 0 1px ${skill.glowColor})`
+                  }}
+                />
+              </div>
+              
+              {/* Show value bubble on hover */}
+              {isHovered && isVisible && (
+                <div 
+                  className="absolute top-0 transform -translate-y-full px-2 py-1 bg-white text-xs text-gray-700 font-medium rounded-md shadow-md border border-gray-100 transition-opacity duration-200 opacity-100 mt-1"
+                  style={{ left: `${skill.startPos + (skill.importance / 2)}%`, transform: 'translateX(-50%) translateY(-100%)' }}
+                >
+                  {skill.startPos}% - {skill.endPos}%
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+};
+
+export default function Threshold({ jdData = {}, jdId, thresholdId, onDataChange, onClose, viewOnly = false }) {
   // Debug the incoming props
   console.log('Threshold component received jdData:', jdData);
   console.log('Threshold component props - jdId:', jdId, 'thresholdId:', thresholdId);
@@ -152,6 +345,16 @@ export default function Threshold({ jdData = {}, jdId, thresholdId, onDataChange
     const role = jdData?.apiResponse?.roles?.[0] || "the role";
     const skills = Object.keys(jdData?.apiResponse?.skills_data || {}).slice(0, 5).join(", ");
 
+    return [
+      `I am applying for ${role} position. Here's my resume: [PASTE RESUME]. How well do I match the requirements?`,
+      `I have experience in ${skills}. Can you help me tailor my resume for the ${role} position?`,
+      `What specific achievements should I highlight in my cover letter for the ${role} position?`,
+      `Based on the job description for ${role}, what questions might I be asked in an interview?`,
+      `How can I demonstrate my expertise in ${skills} during an interview for the ${role} position?`
+    ];
+  });
+    
+  // Define all the update handler functions at the component level
     const handleUpdateThreshold = () => {
       console.log("Updating Threshold Score");
       // Add your update logic here
@@ -191,21 +394,6 @@ export default function Threshold({ jdData = {}, jdId, thresholdId, onDataChange
       console.log("Updating HR System");
       // Add your update logic here
     };
-    
-    // // If prompts don't exist or are empty, generate default ones
-    // if (!prompts || prompts.length === 0) {
-    //   const role = jdData?.apiResponse?.roles?.[0] || "the role";
-    //   const skills = Object.keys(jdData?.apiResponse?.skills_data || {}).slice(0, 5).join(", ");
-      
-      return [
-        `I am applying for ${role} position. Here's my resume: [PASTE RESUME]. How well do I match the requirements?`,
-        `I have experience in ${skills}. Can you help me tailor my resume for the ${role} position?`,
-        `What specific achievements should I highlight in my cover letter for the ${role} position?`,
-        `Based on the job description for ${role}, what questions might I be asked in an interview?`,
-        `How can I demonstrate my expertise in ${skills} during an interview for the ${role} position?`
-      ];
-    });
-    
 
   const [selectedRoles, setSelectedRoles] = useState([]);
   const [dashboardData, setDashboardData] = useState([]);
@@ -245,6 +433,9 @@ export default function Threshold({ jdData = {}, jdId, thresholdId, onDataChange
 
   const [sharedValue, setSharedValue] = useState(null);
   const [selectedRolesForThreshold, setSelectedRolesForThreshold] = useState([]);
+
+  // Add this new state for key skills
+  const [showKeySkills, setShowKeySkills] = useState(true);
 
   useEffect(() => {
     if (jdData?.apiResponse) {
@@ -356,91 +547,6 @@ export default function Threshold({ jdData = {}, jdId, thresholdId, onDataChange
     setIsSidebarOpen(true);
   };
 
-  const getItems = () => {
-    const items = [];
-
-    if (showThreshold) {
-      items.push({
-        id: 'threshold',
-        component: <ThresholdScore onMinimize={() => {
-          setShowThreshold(false);
-          setViewItems(["threshold", ...ViewItems]);
-        }} />
-      });
-    }
-
-    if (showJobDescription) {
-      items.push({
-        id: 'job-description',
-        component: <JobDescription onMinimize={() => {
-          setShowJobDescription(false);
-          setViewItems(["job-description", ...ViewItems]);
-        }} />
-      });
-    }
-
-    if (showResume) {
-      items.push({
-        id: 'resume',
-        component: <Resume onMinimize={() => {
-          setShowResume(false);
-          setViewItems(["resume", ...ViewItems]);
-        }} />
-      });
-    }
-
-    if (showCommunicationSkills) {
-      items.push({
-        id: 'communication-skills',
-        component: <CommunicationSkills onMinimize={() => {
-          setShowCommunicationSkills(false);
-          setViewItems(["communication-skills", ...ViewItems]);
-        }} />
-      });
-    }
-
-    if (showCoding) {
-      items.push({
-        id: 'coding',
-        component: <Coding onMinimize={() => {
-          setShowCoding(false);
-          setViewItems(["coding", ...ViewItems]);
-        }} />
-      });
-    }
-
-    if (showBehaviouralSkills) {
-      items.push({
-        id: 'Behavioural-skills',
-        component: <BehaviouralSkills onMinimize={() => {
-          setShowBehaviouralSkills(false);
-          setViewItems(["Behavioural-skills", ...ViewItems]);
-        }} />
-      });
-    }
-
-    if (showCommondashBoard) {
-      items.push({
-        id: 'commondashboard',
-        component: <CommonDashboard onMinimize={() => {
-          setShowCommondashBoard(false);
-          setViewItems(["commondashboard", ...ViewItems]);
-        }} />
-      });
-    }
-
-    if (showHrSystem) {
-      items.push({
-        id: 'HrSystem',
-        component: <HRSystem onMinimize={() => {
-          setShowHrSystem(false);
-          setViewItems(["HrSystem", ...ViewItems]);
-        }} />
-      });
-    }
-    return items;
-  };
-
   const handleShowThreshold = () => {
     setShowThreshold(true);
     const filtered = ViewItems.filter((item) => item !== "threshold");
@@ -517,88 +623,242 @@ export default function Threshold({ jdData = {}, jdId, thresholdId, onDataChange
     }
   };
 
-  return (
-    // <div className="flex flex-col bg-indigo-50 overflow-hidden">
-    //   <main className="flex flex-col w-full max-md:max-w-full">
-    //     <div className="space-y-2 bg-white rounded-lg shadow-md mx-8 mt-2 p-2">
-    //     </div>
-    <div className="flex flex-col  overflow-hidden">
-  <main className="flex flex-col w-full max-md:max-w-full">
-    <div className="space-y-2 bg-white rounded-lg shadow-md p-0 mx-2 mt-5">
-      {/* Content here */}
-    </div>
-        <div className="space-y-2 bg-white rounded-lg shadow-md  mt-2 pt-2">
-          <section className="flex flex-col justify-center self-center p-0.5 mt- w-full bg-white max-w-[100%] max-md:max-w-full">
-            <div className="flex flex-col w-full bg-white shadow-sm max-md:pb-24 max-md:max-w-full">
-              <div className="flex relative">
-                <div
-                  className="fixed left-0 top-0 h-full w-4 z-50"
-                  onMouseEnter={() => setIsSidebarOpen(true)}
-                />
+  // Helper function to check if we have dashboard data to display
+  const hasDashboardData = () => {
+    if (!jdData?.apiResponse?.skills_data) return false;
+    const skills_data = jdData.apiResponse.skills_data;
+    
+    // Check if we actually have data to display
+    if (typeof skills_data === 'object' && Object.keys(skills_data).length > 0) {
+      // Check first role
+      const firstRole = Object.keys(skills_data)[0];
+      return Object.keys(skills_data[firstRole] || {}).length > 0;
+    }
+    
+    return false;
+  };
 
-                <div
-                  className={`transition-all duration-300 ease-in-out ${
-                    isSidebarOpen ? 'w-1/4' : 'w-0'
-                  } overflow-hidden`}
-                  onMouseLeave={() => showProjectdashboard && setIsSidebarOpen(false)}
-                >
-                  <div style={{display: isSidebarOpen ? 'block' :'none' }}>
+  // For view-only mode with real data
+  const renderDashboards = () => {
+    if (!jdData?.apiResponse?.skills_data) {
+      return (
+        <div className="flex items-center justify-center h-64 bg-white rounded-lg shadow-md">
+          <p className="text-gray-500">No dashboard data available</p>
+        </div>
+      );
+    }
+
+    const skills_data = jdData.apiResponse.skills_data;
+    const dashboards = [];
+    
+    // If skills_data is empty, show message
+    if (typeof skills_data !== 'object' || Object.keys(skills_data).length === 0) {
+      return (
+        <div className="flex items-center justify-center h-64 bg-white rounded-lg shadow-md">
+          <p className="text-gray-500">No dashboard data found</p>
+        </div>
+      );
+    }
+
+    // Get the first role
+    const roleKey = Object.keys(skills_data)[0];
+    const roleData = skills_data[roleKey];
+    
+    // Define dashboard header style variations for visual appeal
+    const headerStyles = [
+      { bg: "bg-gradient-to-r from-blue-500 to-blue-600", icon: "📊" },
+      { bg: "bg-gradient-to-r from-emerald-500 to-emerald-600", icon: "📈" },
+      { bg: "bg-gradient-to-r from-violet-500 to-violet-600", icon: "🔍" },
+      { bg: "bg-gradient-to-r from-amber-500 to-amber-600", icon: "🎯" },
+      { bg: "bg-gradient-to-r from-rose-500 to-rose-600", icon: "⚙️" },
+      { bg: "bg-gradient-to-r from-cyan-500 to-cyan-600", icon: "💡" },
+      { bg: "bg-gradient-to-r from-indigo-500 to-indigo-600", icon: "🧩" },
+    ];
+    
+    // Render each category as KeySkillsBreakdown
+    let dashboardCounter = 1;
+    for (const category in roleData) {
+      const items = roleData[category];
+      
+      // Skip empty categories
+      if (!items || Object.keys(items).length === 0) {
+        dashboardCounter++;
+        continue;
+      }
+      
+      // Get style for this dashboard
+      const style = headerStyles[(dashboardCounter - 1) % headerStyles.length];
+      
+      // Transform skills data for KeySkillsBreakdown
+      const skillsForComponent = Object.entries(items).map(([name, data]) => ({
+        name,
+        importance: data.importance || 0
+      }));
+      
+      // Add dashboard to list with sophisticated styling
+      dashboards.push(
+        <div key={category} className="bg-white rounded-xl shadow-sm hover:shadow-md transition-shadow duration-300 mb-8 overflow-hidden">
+          <div className={`${style.bg} text-white p-4`}>
+            <div className="flex items-center">
+              <span className="text-xl mr-2">{style.icon}</span>
+              <h3 className="text-lg font-bold">{category}</h3>
+            </div>
+            <div className="text-xs text-white/80 mt-1">
+              {Object.keys(items).length} skills • Dashboard #{dashboardCounter}
+            </div>
+          </div>
+          <KeySkillsBreakdown 
+            skills={skillsForComponent}
+            onMinimize={() => {}}
+            onUpdate={() => {}}
+            viewOnly={true}
+          />
+        </div>
+      );
+      
+      dashboardCounter++;
+    }
+
+    return dashboards;
+  };
+
+  // Add this handler for key skills component
+  const handleShowKeySkills = () => {
+    setShowKeySkills(true);
+    const filtered = ViewItems.filter((item) => item !== "key-skills");
+    setViewItems(filtered);
+  };
+  
+  const handleUpdateKeySkills = () => {
+    console.log("Updating Key Skills");
+    // Add your update logic here
+  };
+  
+  // Sample skills data (you can replace this with real data from your API)
+  const sampleSkills = [
+    { name: "Programming", importance: 35 },
+    { name: "Communication", importance: 20 },
+    { name: "Problem Solving", importance: 15 },
+    { name: "Frontend", importance: 12 },
+    { name: "Backend", importance: 10 },
+    { name: "DevOps", importance: 8 },
+    { name: "Data Analysis", importance: 7 },
+    { name: "UX/UI Design", importance: 6 },
+    { name: "Testing", importance: 5 },
+    { name: "Documentation", importance: 4 }
+  ];
+
+  return (
+    <div className="flex min-h-screen bg-gray-100">
+      {/* Left sidebar - Always show it */}
+      <div className={`w-64 transition-all duration-300 ${isSidebarOpen ? 'mr-0' : '-ml-64'} bg-white border-r border-gray-200 shadow-md`}>
                     <Sidebar
                       roles={roles}
                       skills_data={skillsData}
                       samplePrompts={samplePrompts}
-                      onRoleSelect={handleRoleSelection}
-                      onDashboardUpdate={handleDashboardUpdate}
                       sendRangeValue={handleSendRangeValue}
-                      sendSelectedRoles={handleSelectedRoles}
                       onCreate={handleCreate}
-                      jobId={jdData?.jdId}
+          sendSelectedRoles={handleSelectedRoles}
+          onRoleSelect={handleRoleSelection}
+          onDashboardUpdate={handleDashboardUpdate}
+          viewOnly={viewOnly}
                     />
                   </div>
-                </div>
 
-                <div style={{width:'100%',clear:'both'}}>
-                  <span style={{paddingLeft:'26px',fontSize:'30px'}}> Threshold Score</span>
-                  <Link style={{float:'right'}} href="/">
-                    <button>
-                      <img
-                        loading="lazy"
-                        src="../../close.svg"
-                        style={{width:'14px',height:'14px',margin:'10px',padding:'0px'}}
-                      />
-                    </button>
-                  </Link>
+      {/* Main content */}
+      <div className="flex-1 transition-all duration-300">
+        {/* Toggle sidebar button */}
+        <button
+          onClick={() => setIsSidebarOpen(!isSidebarOpen)}
+          className="fixed left-0 top-1/2 transform -translate-y-1/2 bg-white p-2 rounded-r shadow-md z-10 hover:bg-gray-100"
+        >
+          {isSidebarOpen ? '<' : '>'}
+        </button>
 
-                  {showProjectdashboard && (
-                    <div
-                      className={`transition-all duration-300 ease-in-out flex-grow ${
-                        isSidebarOpen ? 'ml-0' : 'ml-0 w-full'
-                      }`}
-                    >
-                      <div className="w-full overflow-x-hidden" style={{height:'auto'}}>
-                        <RightSidebar
-                          selectedRoles={selectedRolesForThreshold || []}
-                          skills_data={skillsData[0]}
-                          jobId={jdData?.jdId}
-                          activeTab={activeDashboard}
-                          initialUseRatings={useRatings}
-                          closeSidebar={() => setIsSidebarOpen(false)}
-                        />
-                        {/* Note: When slider values are modified, a Save Changes button will appear at the top */}
-                      </div>
-                    </div>
-                  )}
-                  
-                  {/* Display Sample Prompts */}
-                  {samplePrompts && samplePrompts.length > 0 && (
-                    <SamplePrompts prompts={samplePrompts} />
+        <div className="container mx-auto py-8 px-4">
+          {viewOnly ? (
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              {renderDashboards()}
+                </div>
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+              {/* Only render components that are toggled to show */}
+              {showThreshold && (
+                <ThresholdScore
+                  onMinimize={handleShowThreshold}
+                  onUpdate={handleUpdateThreshold}
+                  viewOnly={viewOnly}
+                />
+              )}
+              
+              {showJobDescription && (
+                <JobDescription
+                  onMinimize={handleShowJobDescription}
+                  onUpdate={handleUpdateJobDescription}
+                  viewOnly={viewOnly}
+                />
+              )}
+              
+              {showResume && (
+                <Resume
+                  onMinimize={handleShowResume}
+                  onUpdate={handleUpdateResume}
+                  viewOnly={viewOnly}
+                />
+              )}
+              
+              {showKeySkills && (
+                <KeySkillsBreakdown
+                  skills={sampleSkills}
+                  onMinimize={handleShowKeySkills}
+                  onUpdate={handleUpdateKeySkills}
+                  viewOnly={viewOnly}
+                />
+              )}
+              
+              {showCommunicationSkills && (
+                <CommunicationSkills
+                  onMinimize={handleShowCommunicationSkills}
+                  onUpdate={handleUpdateCommunicationSkills}
+                  viewOnly={viewOnly}
+                />
+              )}
+              
+              {showCoding && (
+                <Coding
+                  onMinimize={handleShowCoding}
+                  onUpdate={handleUpdateCoding}
+                  viewOnly={viewOnly}
+                />
+              )}
+              
+              {showBehaviouralSkills && (
+                <BehaviouralSkills
+                  onMinimize={handleShowBehaviouralSkills}
+                  onUpdate={handleUpdateBehaviouralSkills}
+                  viewOnly={viewOnly}
+                />
+              )}
+              
+              {showCommondashBoard && (
+                <CommonDashboard
+                  onMinimize={handleShowCommondashBoard}
+                  onUpdate={handleUpdateCommonDashboard}
+                  viewOnly={viewOnly}
+                />
+              )}
+              
+              {showHrSystem && (
+                <HRSystem
+                  onMinimize={handleShowHrSystem}
+                  onUpdate={handleUpdateHRSystem}
+                  viewOnly={viewOnly}
+                />
                   )}
                 </div>
+          )}
               </div>
             </div>
-          </section>
-        </div>
-      </main>
     </div>
   );
 }

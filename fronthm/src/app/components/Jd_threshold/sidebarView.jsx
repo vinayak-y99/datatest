@@ -11,7 +11,8 @@ const Sidebar = ({
     onCreate,
     sendSelectedRoles,
     onRoleSelect,
-    onDashboardUpdate
+    onDashboardUpdate,
+    viewOnly = false
 }) => {
     const [selectedRoles, setSelectedRoles] = useState([]);
     const [rangeValue, setRangeValue] = useState(1);
@@ -101,7 +102,7 @@ const Sidebar = ({
                 </div>
             </div>
 
-            {promptsList && promptsList.length > 0 && (
+            {!viewOnly && promptsList && promptsList.length > 0 && (
                 <div className="mt-6">
                     <h3 className="text-lg font-medium mb-3">Available Prompts</h3> 
                     <div className="space-y-3">

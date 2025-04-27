@@ -1,8 +1,9 @@
 //RightSide Popup for JD Threshold
 import { useState, useRef, useEffect } from 'react';
 import JDPage from './page2'; // Ensure this path is correct to your JDPage component
+import { FaTimes, FaExpandAlt, FaCompressAlt, FaChartPie, FaSync } from 'react-icons/fa';
 
-const DrawerNavigationJD = ({ selectedJd, jobId, thresholdId, onClose }) => {
+const DrawerNavigationJD = ({ selectedJd, jobId, thresholdId, onClose, viewOnly = false }) => {
   const [isMaximized, setIsMaximized] = useState(false);
   const drawerRef = useRef(null);
   const [drawerWidth, setDrawerWidth] = useState(window.innerWidth * 0.6);
@@ -181,48 +182,65 @@ const DrawerNavigationJD = ({ selectedJd, jobId, thresholdId, onClose }) => {
 
   return (
     <div
-      className="fixed top-0 left-0 z-50 bg-gray-800 bg-opacity-50 w-full h-full"
+      className="fixed top-0 left-0 z-50 bg-black bg-opacity-60 backdrop-blur-sm w-full h-full"
       onClick={onClose}
     >
       <div
         ref={drawerRef}
         style={{ width: `${drawerWidth}px` }}
-        className="absolute top-0 right-0 h-full bg-white border-l shadow-lg transition-all duration-300"
+        className="absolute top-0 right-0 h-full bg-white border-l shadow-xl transition-all duration-300"
         onClick={handleDrawerClick}
       >
-        <div className="flex justify-between items-center p-4 border-b">
-          <h3 className="text-xl font-semibold">
-            {selectedJd?.fileName || selectedJd?.title || 'Job Description'}
+        <div className={`flex justify-between items-center p-4 border-b ${viewOnly ? 'bg-gradient-to-r from-blue-600 to-indigo-700 text-white' : 'bg-white'}`}>
+          <h3 className="text-xl font-bold flex items-center">
+            {viewOnly && <FaChartPie className="mr-2" />}
+            {viewOnly 
+              ? `Dashboard View: ${selectedJd?.fileName || selectedJd?.title || selectedJd?.role || 'Job Description'}`
+              : (selectedJd?.fileName || selectedJd?.title || 'Job Description')
+            }
           </h3>
           <div className="flex items-center gap-3">
-            {(
+            {!viewOnly && (
               <button
                 onClick={handleShowConfirmation}
                 disabled={isUpdating}
-                className="px-4 py-1 bg-blue-500 text-white rounded hover:bg-blue-600 disabled:bg-blue-300 disabled:cursor-not-allowed"
+                className={`px-4 py-1.5 rounded flex items-center gap-1 font-medium transition-colors ${
+                  isUpdating 
+                    ? 'bg-blue-300 text-white cursor-not-allowed' 
+                    : 'bg-blue-500 text-white hover:bg-blue-600'
+                }`}
               >
-                {isUpdating ? 'Updating...' : 'Update Changes'}
+                {isUpdating ? (
+                  <>
+                    <FaSync className="animate-spin" />
+                    <span>Updating...</span>
+                  </>
+                ) : (
+                  'Update Changes'
+                )}
               </button>
             )}
             <button 
               onClick={toggleMaximize} 
-              className="text-blue-500 hover:text-blue-700"
+              className={`p-2 rounded-full ${viewOnly ? 'text-white hover:bg-white/20' : 'text-blue-500 hover:bg-gray-100'}`}
+              title={isMaximized ? 'Restore' : 'Maximize'}
             >
-              {isMaximized ? 'Restore' : 'Maximize'}
+              {isMaximized ? <FaCompressAlt /> : <FaExpandAlt />}
             </button>
             <button 
               onClick={onClose} 
-              className="text-red-500 hover:text-red-700 font-semibold"
+              className={`p-2 rounded-full ${viewOnly ? 'text-white hover:bg-white/20' : 'text-red-500 hover:bg-gray-100'}`}
+              title="Close"
             >
-              ✕
+              <FaTimes />
             </button>
           </div>
         </div>
 
         {updateMessage && (
-          <div className={`p-2 text-center ${updateMessage.includes('Error') 
-            ? 'bg-red-100 text-red-700' 
-            : 'bg-green-100 text-green-700'}`}>
+          <div className={`p-3 text-center font-medium ${updateMessage.includes('Error') 
+            ? 'bg-red-100 text-red-700 border-b border-red-200' 
+            : 'bg-green-100 text-green-700 border-b border-green-200'}`}>
             {updateMessage}
           </div>
         )}
@@ -230,14 +248,14 @@ const DrawerNavigationJD = ({ selectedJd, jobId, thresholdId, onClose }) => {
         {/* Confirmation Card */}
         {showConfirmation && (
           <div className="fixed inset-0 flex items-center justify-center z-50" onClick={(e) => e.stopPropagation()}>
-            <div className="absolute inset-0 bg-black bg-opacity-50"></div>
-            <div className="bg-white rounded-lg p-6 shadow-xl z-10 max-w-md w-full">
-              <h3 className="text-xl font-semibold mb-4">Confirm Changes</h3>
+            <div className="absolute inset-0 bg-black bg-opacity-50 backdrop-blur-sm"></div>
+            <div className="bg-white rounded-xl p-6 shadow-2xl z-10 max-w-md w-full">
+              <h3 className="text-xl font-bold mb-4">Confirm Changes</h3>
               <div className="mb-4">
                 <p className="mb-2">Are you sure you want to update the following threshold values?</p>
-                <div className="bg-gray-100 p-3 rounded">
-                  <p><span className="font-medium">Selection Threshold:</span> {currentData?.selection_threshold}</p>
-                  <p><span className="font-medium">Rejection Threshold:</span> {currentData?.rejection_threshold}</p>
+                <div className="bg-gray-50 p-4 rounded-lg border border-gray-200">
+                  <p className="mb-2"><span className="font-medium">Selection Threshold:</span> {currentData?.selection_threshold}</p>
+                  <p className="mb-2"><span className="font-medium">Rejection Threshold:</span> {currentData?.rejection_threshold}</p>
                   {currentData?.selected_prompts && (
                     <p><span className="font-medium">Selected Prompts:</span> {currentData.selected_prompts.length > 50 
                       ? `${currentData.selected_prompts.substring(0, 50)}...` 
@@ -249,15 +267,18 @@ const DrawerNavigationJD = ({ selectedJd, jobId, thresholdId, onClose }) => {
               <div className="flex justify-end gap-3">
                 <button 
                   onClick={() => setShowConfirmation(false)} 
-                  className="px-4 py-2 bg-gray-300 text-gray-800 rounded hover:bg-gray-400"
+                  className="px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-100 transition-colors"
                 >
                   Cancel
                 </button>
                 <button 
                   onClick={handleUpdateThresholds} 
-                  className="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600"
+                  disabled={isUpdating}
+                  className={`px-4 py-2 bg-blue-500 text-white rounded-lg font-medium hover:bg-blue-600 transition-colors ${
+                    isUpdating ? 'opacity-70 cursor-not-allowed' : ''
+                  }`}
                 >
-                  Confirm
+                  {isUpdating ? 'Updating...' : 'Confirm'}
                 </button>
               </div>
             </div>
@@ -266,22 +287,31 @@ const DrawerNavigationJD = ({ selectedJd, jobId, thresholdId, onClose }) => {
 
         <div 
           id="drawer-resize-handle"
-          className="absolute top-0 left-0 w-1 h-full cursor-col-resize bg-gray-300 hover:bg-blue-500"
+          className="absolute left-0 top-0 bottom-0 w-1 cursor-ew-resize hover:bg-blue-500"
           onMouseDown={handleMouseDown}
         ></div>
 
-        <div className="overflow-auto p-4 h-[calc(100%-64px)]">
-          {selectedJd && (
-            <JDPage 
-              jdId={resolvedJobId}
-              thresholdId={resolvedThresholdId}
-              selectedFile={selectedJd.file} 
-              jdData={selectedJd}
-              onClose={onClose}
-              onDataChange={handleDataChange}
-            />
-          )}
-        </div> 
+        <div className="h-full overflow-auto p-4 pb-16">
+          <JDPage
+            jdData={{
+              apiResponse: {
+                roles: Array.isArray(selectedJd?.roles) 
+                  ? selectedJd.roles 
+                  : selectedJd?.fullData?.roles || [],
+                skills_data: selectedJd?.skills_data || selectedJd?.skills || selectedJd?.fullData?.skills_data || {},
+                achievements: selectedJd?.achievements || selectedJd?.fullData?.achievements || {},
+                selected_prompts: selectedJd?.selected_prompts || selectedJd?.fullData?.selected_prompts || null,
+                selection_threshold: selectedJd?.matchScore || selectedJd?.selection_threshold || selectedJd?.fullData?.selection_threshold,
+                rejection_threshold: selectedJd?.relevanceScore || selectedJd?.rejection_threshold || selectedJd?.fullData?.rejection_threshold,
+              }
+            }}
+            jdId={resolvedJobId}
+            thresholdId={resolvedThresholdId}
+            onDataChange={handleDataChange}
+            onClose={onClose}
+            viewOnly={viewOnly}
+          />
+        </div>
       </div>
     </div>
   );
