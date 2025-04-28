@@ -1,6 +1,6 @@
 "use client"
 import React, { useState, useEffect } from 'react';
-import { ChevronDown, ChevronRight, Edit2, Trash2, Plus } from 'lucide-react';
+import { ChevronDown, ChevronRight, Edit2, Trash2, Plus, Info } from 'lucide-react';
 // import FirstPageIcon from '@mui/icons-material/FirstPage';
 import { Switch } from '@mui/material';
 import { ResponsiveContainer, PieChart, Pie, BarChart, Bar, XAxis, YAxis, Cell, Tooltip } from 'recharts';
@@ -19,8 +19,6 @@ const RightSidebar = ({ jobId, skills_data = {}, activeTab = 'skills', initialUs
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
-    console.log("RightSidebar received skills_data update:", skills_data);
-  
     // Only update if skills_data is not empty
     if (skills_data && Object.keys(skills_data).length > 0) {
       setSkillsDataState(skills_data);
@@ -42,11 +40,8 @@ const RightSidebar = ({ jobId, skills_data = {}, activeTab = 'skills', initialUs
     if (skills_data) {
       const roleKey = Object.keys(skills_data)[0];
       if (roleKey && skills_data[roleKey]) {
-        console.log("Available skills:");
-        const roleData = skills_data[roleKey];
         ['skills', 'achievements', 'activities'].forEach(category => {
           if (roleData[category]) {
-            console.log(`${category}:`, Object.keys(skills_data[roleKey][category]));
             Object.keys(roleData[category]).forEach(itemName => {
               newRecentlyUpdated[`${category}-${itemName}`] = true;
             });
@@ -144,18 +139,23 @@ const RightSidebar = ({ jobId, skills_data = {}, activeTab = 'skills', initialUs
         throw new Error("No role data found");
       }
 
-      // Prepare data for API call 
+      // Get current values from the state
+      const currentItem = skillsDataState[roleKey][category][itemName] || { rating: 5, importance: 50 };
+
+      // Prepare data for API call - only include the field being modified 
       const updateData = {
         role: roleKey,
         category: category,
         item_name: itemName,
-        new_rating: useRatings ? newValue : (skillsDataState[roleKey][category][itemName]?.rating || 5),
         job_id: jobId // Use the jobId prop directly
       };
 
-      // Log the data being sent
-      console.log(`Updating item ${itemName} in category ${category} with job_id ${jobId}`);
-      console.log("Update request data:", JSON.stringify(updateData));
+      // Add the field being updated based on which mode is active
+      if (useRatings) {
+        updateData.new_rating = newValue;
+      } else {
+        updateData.new_importance = newValue;
+      }
 
       // Call the API endpoint
       const response = await fetch('http://127.0.0.1:8000/api/update_dashboard_item/', {
@@ -167,7 +167,6 @@ const RightSidebar = ({ jobId, skills_data = {}, activeTab = 'skills', initialUs
       });
 
       const responseText = await response.text();
-      console.log("Raw API response:", responseText);
       
       if (!response.ok) {
         throw new Error(`API error: ${response.status} - ${responseText}`);
@@ -181,27 +180,36 @@ const RightSidebar = ({ jobId, skills_data = {}, activeTab = 'skills', initialUs
         result = { status: "error", message: "Invalid JSON response" };
       }
       
-      console.log("Dashboard item update result:", result);
-
       // Update the local state to reflect the change
       const updatedSkillsData = { ...skillsDataState };
       if (updatedSkillsData[roleKey] && updatedSkillsData[roleKey][category] && updatedSkillsData[roleKey][category][itemName]) {
-        if (useRatings) {
-          updatedSkillsData[roleKey][category][itemName].rating = newValue;
+        // If we received both values in the response, use them
+        if (result.new_rating !== undefined && result.new_importance !== undefined) {
+          updatedSkillsData[roleKey][category][itemName].rating = result.new_rating;
+          updatedSkillsData[roleKey][category][itemName].importance = result.new_importance;
         } else {
-          updatedSkillsData[roleKey][category][itemName].importance = newValue;
+          // Fallback to only updating the field that was changed
+          if (useRatings) {
+            updatedSkillsData[roleKey][category][itemName].rating = newValue;
+          } else {
+            updatedSkillsData[roleKey][category][itemName].importance = newValue;
+          }
         }
         setSkillsDataState(updatedSkillsData);
       }
 
-      // Mark as saved
-      setValues(prev => ({
-        ...prev,
-        [`${category}-${itemName}`]: {
-          ...prev[`${category}-${itemName}`],
-          modified: false
-        }
-      }));
+      // Mark as saved and update values store with both fields
+      setValues(prev => {
+        const prevValues = prev[`${category}-${itemName}`] || {};
+        return {
+          ...prev,
+          [`${category}-${itemName}`]: {
+            rating: result.new_rating !== undefined ? result.new_rating : prevValues.rating,
+            importance: result.new_importance !== undefined ? result.new_importance : prevValues.importance,
+            modified: false
+          }
+        };
+      });
 
       return true;
     } catch (error) {
@@ -224,8 +232,13 @@ const RightSidebar = ({ jobId, skills_data = {}, activeTab = 'skills', initialUs
     for (const [key, value] of Object.entries(values)) {
       if (value.modified) {
         const [category, itemName] = key.split('-');
-        const newValue = useRatings ? value.rating : value.importance;
-        promises.push(updateDashboardItem(category, itemName, newValue));
+        
+        // Get the field that was modified based on the current mode
+        if (useRatings) {
+          promises.push(updateDashboardItem(category, itemName, value.rating));
+        } else {
+          promises.push(updateDashboardItem(category, itemName, value.importance));
+        }
       }
     }
     
@@ -239,7 +252,6 @@ const RightSidebar = ({ jobId, skills_data = {}, activeTab = 'skills', initialUs
         // Request fresh data to ensure UI matches database
         try {
           // Make a call to get the latest job description data
-          console.log(`Refreshing data for job ID: ${jobId}`);
           const response = await fetch(`http://127.0.0.1:8000/api/job-description/${jobId}`);
           
           if (response.ok) {
@@ -251,7 +263,6 @@ const RightSidebar = ({ jobId, skills_data = {}, activeTab = 'skills', initialUs
                 detail: { jobId, data: updatedJobData }
               }));
             }
-            console.log("Successfully refreshed job data");
           }
         } catch (refreshError) {
           console.error("Error refreshing job data:", refreshError);
@@ -365,9 +376,10 @@ const RightSidebar = ({ jobId, skills_data = {}, activeTab = 'skills', initialUs
                   <div className="flex items-center gap-4">
                     {useRatings ? (
                       <div className="flex items-center gap-2">
-                        <span className="text-sm font-medium w-8">
-                          {getValue(title, itemName, data)}
-                        </span>
+                        <div className="flex flex-col items-end mr-1">
+                          <span className="text-sm font-medium text-blue-600">{getValue(title, itemName, data).toFixed(1)}</span>
+                          <span className="text-xs text-gray-500">{data.importance.toFixed(1)}%</span>
+                        </div>
                         <input
                           type="range"
                           min="0"
@@ -385,16 +397,24 @@ const RightSidebar = ({ jobId, skills_data = {}, activeTab = 'skills', initialUs
                         )}
                       </div>
                     ) : (
-                      <input
-                        type="number"
-                        value={getValue(title, itemName, data)}
-                        onChange={(e) => handleValueChange(title, itemName, e.target.value, data)}
-                        onFocus={(e) => e.target.select()}
-                        className={`w-20 p-2 text-sm border rounded text-center focus:outline-none focus:ring-2 focus:ring-blue-500 ${
-                          loading ? 'opacity-50' : ''
-                        }`}
-                        disabled={loading}
-                      />
+                      <div className="flex items-center gap-2">
+                        <div className="flex flex-col items-end mr-1">
+                          <span className="text-sm font-medium text-purple-600">{data.importance.toFixed(1)}%</span>
+                          <span className="text-xs text-gray-500">{data.rating.toFixed(1)}</span>
+                        </div>
+                        <input
+                          type="number"
+                          min="0"
+                          max="100"
+                          value={getValue(title, itemName, data)}
+                          onChange={(e) => handleValueChange(title, itemName, e.target.value, data)}
+                          onFocus={(e) => e.target.select()}
+                          className={`w-20 p-2 text-sm border rounded text-center focus:outline-none focus:ring-2 focus:ring-purple-500 ${
+                            loading ? 'opacity-50' : ''
+                          }`}
+                          disabled={loading}
+                        />
+                      </div>
                     )}
                   </div>
                 </div>
@@ -516,13 +536,44 @@ const RightSidebar = ({ jobId, skills_data = {}, activeTab = 'skills', initialUs
       </div>
 
       <div className="flex items-center justify-between mb-6 bg-white p-4 rounded-lg border border-gray-200">
-        <span className="text-lg text-gray-700">Rating Mode</span>
         <div className="flex items-center gap-2">
-          <Switch
-            checked={useRatings}
-            onChange={() => setUseRatings(!useRatings)}
-          />
-          <span className="text-base text-gray-600">{useRatings ? '(0-10)' : '(0-100%)'}</span>
+          <span className="text-base font-medium text-gray-700">Value Mode</span>
+          <div className="relative group">
+            <div className="cursor-help text-gray-500 hover:text-blue-500">
+              <Info size={16} />
+            </div>
+            <div className="absolute left-0 bottom-full mb-2 w-64 bg-gray-800 text-white text-xs rounded p-2 opacity-0 group-hover:opacity-100 transition-opacity z-10 pointer-events-none">
+              Rating and Importance values are synchronized. When you change one, the other updates proportionally.
+              <div className="border-t border-gray-600 mt-1 pt-1">
+                <div>Rating: 0-10 scale</div>
+                <div>Importance: 0-100% weight</div>
+              </div>
+            </div>
+          </div>
+        </div>
+        
+        <div className="flex items-center gap-3">
+          <span className={`text-sm ${useRatings ? 'text-blue-600 font-medium' : 'text-gray-500'}`}>Rating (0-10)</span>
+          <div className="relative">
+            <button
+              onClick={() => setUseRatings(!useRatings)}
+              className={`relative w-12 h-6 rounded-full transition-colors flex items-center ${
+                useRatings ? 'bg-blue-600 justify-start' : 'bg-purple-600 justify-end'
+              }`}
+              title="Toggle between rating and importance mode"
+            >
+              <div className="absolute inset-0 flex items-center justify-center text-white text-[10px] font-medium">
+                <span className={`absolute left-1 ${useRatings ? 'opacity-0' : 'opacity-100'}`}>%</span>
+                <span className={`absolute right-1 ${useRatings ? 'opacity-100' : 'opacity-0'}`}>★</span>
+              </div>
+              <div
+                className={`absolute top-1 left-1 w-4 h-4 bg-white rounded-full shadow-md transition-transform ${
+                  useRatings ? 'translate-x-0' : 'translate-x-6'
+                }`}
+              />
+            </button>
+          </div>
+          <span className={`text-sm ${!useRatings ? 'text-purple-600 font-medium' : 'text-gray-500'}`}>Importance (%)</span>
         </div>
       </div>
 

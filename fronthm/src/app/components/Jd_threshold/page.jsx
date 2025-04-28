@@ -5,7 +5,7 @@ import React, { useState, useEffect } from "react";
 import Sidebar from "./sidebarCreate";
 import RightSidebar from './rightsidebar';
 import Link from 'next/link';
-import { ChevronDown, ChevronRight, Settings } from 'lucide-react';
+import { ChevronDown, ChevronRight, Settings, Plus, Trash2, X, CheckCircle } from 'lucide-react';
 import { ResponsiveContainer, PieChart, Pie, BarChart, Bar, XAxis, YAxis, Cell, Tooltip } from 'recharts';
 
 // Placeholder components for dashboard items
@@ -40,15 +40,9 @@ const Resume = ({ onMinimize }) => (
 );
 
 export default function Threshold({ jdData = {}, jobId, jdId }) {
-  // Debug all incoming props
-  console.log('Threshold component props - jdData:', jdData);
-  console.log('Threshold component props - jobId:', jobId, 'jdId:', jdId);
-  console.log('Sample prompts received in Threshold:', jdData?.apiResponse?.selected_prompts);
-  console.log('jobId from jdData:', jdData?.jobId);
-
+  // Remove debug logging
   const [roles, setRoles] = useState(() => {
     const rolesData = jdData?.apiResponse?.roles;
-    console.log("Initializing roles with:", rolesData);
     return rolesData || [];
   });
 
@@ -60,7 +54,6 @@ export default function Threshold({ jdData = {}, jobId, jdId }) {
   // Initialize sample prompts from the API response
   const [samplePrompts, setSamplePrompts] = useState(() => {
     const prompts = jdData?.apiResponse?.selected_prompts;
-    console.log('Initializing sample prompts with:', prompts);  
     
     // Check if prompts is an array
     if (Array.isArray(prompts) && prompts.length > 0) {
@@ -98,6 +91,12 @@ export default function Threshold({ jdData = {}, jobId, jdId }) {
   const [modifiedValues, setModifiedValues] = useState({});
   const [savingChanges, setSavingChanges] = useState(false);
   const [savingItems, setSavingItems] = useState({});
+  const [showAddItemPopup, setShowAddItemPopup] = useState(false);
+  const [newItemName, setNewItemName] = useState('');
+  const [newItemImportance, setNewItemImportance] = useState(50);
+  const [hoveredItem, setHoveredItem] = useState(null);
+  const [itemToDelete, setItemToDelete] = useState(null);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
 
   const COLORS = ['#3b82f6', '#10b981', '#8b5cf6', '#f59e0b', '#ec4899', '#6366f1'];
 
@@ -135,7 +134,6 @@ export default function Threshold({ jdData = {}, jobId, jdId }) {
         if (roleKey && jdData.apiResponse.skills_data[roleKey]) {
           // Extract categories (skills, achievements, activities, etc.)
           const categories = Object.keys(jdData.apiResponse.skills_data[roleKey]);
-          console.log("Available dashboard categories:", categories);
           setAvailableDashboards(categories);
           
           // Set first category as active by default
@@ -145,8 +143,6 @@ export default function Threshold({ jdData = {}, jobId, jdId }) {
           }
         }
       }
-      
-      console.log('Updated sample prompts from jdData:', jdData.apiResponse.selected_prompts);
     }
   }, [jdData]);
 
@@ -157,8 +153,6 @@ export default function Threshold({ jdData = {}, jobId, jdId }) {
       
       // Make sure this is for our job
       if ((jobId || jdData?.jobId) == updatedJobId && data) {
-        console.log(`Received dashboard update event for job ${updatedJobId}`);
-        
         // Update skills data if required_skills is available
         if (data.required_skills) {
           try {
@@ -183,7 +177,7 @@ export default function Threshold({ jdData = {}, jobId, jdId }) {
               setSkillsData(updatedSkillsData);
             }
           } catch (parseError) {
-            console.error("Error parsing updated skills data:", parseError);
+            // Silent error handling
           }
         }
       }
@@ -217,7 +211,6 @@ export default function Threshold({ jdData = {}, jobId, jdId }) {
   };
 
   const handleSelectedRoles = (roles) => {
-    console.log("Page received selected roles:", roles);
     setSelectedRolesForThreshold(roles);
     // Show the dashboard when roles are selected
     setShowDashboard(true);
@@ -228,12 +221,10 @@ export default function Threshold({ jdData = {}, jobId, jdId }) {
   };
 
   const handleRolesUpdate = (newRoles) => {
-    console.log("Page received new roles from API:", newRoles);
     setRoles(newRoles);
   };
 
   const handleSkillsUpdate = (newSkills) => {
-    console.log("Page received new skills from API:", newSkills);
     setSkillsData(newSkills);
   };
 
@@ -284,9 +275,6 @@ export default function Threshold({ jdData = {}, jobId, jdId }) {
   };
 
   const handleCreate = async () => {
-    console.log("Creating dashboard with roles:", selectedRolesForThreshold);
-    console.log("Skills data available:", skillsData);
-    console.log("Sample prompts available:", samplePrompts);
     setIsLoading(true);
     
     try {
@@ -315,8 +303,6 @@ export default function Threshold({ jdData = {}, jobId, jdId }) {
         }
       }
       
-      console.log("Final currentJobId value:", currentJobId, "type:", typeof currentJobId);
-      
       // Call the create_dashboards endpoint with the job_id and dashboard count
       const response = await fetch(`http://127.0.0.1:8000/api/update_dashboards/?job_id=${currentJobId}&num_dashboards=${dashboardCount}`, {
         method: 'PUT',
@@ -326,19 +312,15 @@ export default function Threshold({ jdData = {}, jobId, jdId }) {
         }
       });
       
-      console.log("Response status:", response.status);
-      
       // Check for empty response
       const responseText = await response.text();
-      console.log("Raw response:", responseText);
       
       let responseData = {};
       if (responseText) {
         try {
           responseData = JSON.parse(responseText);
         } catch (parseError) {
-          console.error("Error parsing response:", parseError);
-          throw new Error(`Error parsing API response: ${responseText.substring(0, 100)}...`);
+          throw new Error(`Error parsing API response`);
         }
       }
       
@@ -346,13 +328,10 @@ export default function Threshold({ jdData = {}, jobId, jdId }) {
         throw new Error(`API Error (${response.status}): ${response.statusText || ""}`);
       }
       
-      console.log("Dashboard created successfully:", responseData);
-      
       setShowDashboard(true);
       setIsSidebarOpen(false);
       setIsLoading(false);
     } catch (error) {
-      console.error("Error creating dashboard:", error);
       // Show error message to user
       alert(`Error creating dashboard: ${error.message}`);
       setIsLoading(false);
@@ -412,6 +391,13 @@ export default function Threshold({ jdData = {}, jobId, jdId }) {
             </div>
             <span className="text-gray-800 font-medium text-xl capitalize">{title}</span>
           </div>
+          {/* Add item button */}
+          <button
+            onClick={() => setShowAddItemPopup(true)}
+            className="px-3 py-1 bg-blue-500 text-white rounded-md flex items-center text-sm hover:bg-blue-600 transition-colors"
+          >
+            <Plus size={16} className="mr-1" /> Add Item
+          </button>
         </div>
         
         {expandedSections[title] && (
@@ -420,8 +406,20 @@ export default function Threshold({ jdData = {}, jobId, jdId }) {
               {Object.entries(items).map(([itemName, data], index) => (
                 <div
                   key={itemName}
-                  className="flex items-center mb-4 hover:bg-gray-50 p-2 rounded transition-colors"
+                  className="flex items-center mb-4 hover:bg-gray-50 p-2 rounded transition-colors group"
+                  onMouseEnter={() => setHoveredItem(itemName)}
+                  onMouseLeave={() => setHoveredItem(null)}
                 >
+                  {/* Delete button that appears on hover */}
+                  {hoveredItem === itemName && (
+                    <button
+                      onClick={() => handleDeleteItem(itemName)}
+                      className="mr-2 p-1 text-red-500 hover:bg-red-50 rounded"
+                      title="Delete item"
+                    >
+                      <Trash2 size={16} />
+                    </button>
+                  )}
                   <ColorDot color={COLORS[index % COLORS.length]} />
                   <span className="text-sm text-gray-700 flex-grow ml-2">{itemName}</span>
                   
@@ -620,7 +618,6 @@ export default function Threshold({ jdData = {}, jobId, jdId }) {
             item.newValue
           );
         } catch (error) {
-          console.error(`Failed to save ${key}:`, error);
           allSucceeded = false;
         }
       }
@@ -631,7 +628,6 @@ export default function Threshold({ jdData = {}, jobId, jdId }) {
         // Request fresh data to ensure UI matches database
         try {
           // Make a call to get the latest job description data
-          console.log(`Refreshing data for job ID: ${jobId || jdData?.jobId}`);
           const response = await fetch(`http://127.0.0.1:8000/api/job-description/${jobId || jdData?.jobId}`);
           
           if (response.ok) {
@@ -661,14 +657,11 @@ export default function Threshold({ jdData = {}, jobId, jdId }) {
                   setSkillsData(updatedSkillsData);
                 }
               } catch (parseError) {
-                console.error("Error parsing updated skills data:", parseError);
+                // Silent error handling
               }
             }
-            
-            console.log("Successfully refreshed job data");
           }
         } catch (refreshError) {
-          console.error("Error refreshing job data:", refreshError);
           // Continue with success message even if refresh fails
         }
         
@@ -678,7 +671,6 @@ export default function Threshold({ jdData = {}, jobId, jdId }) {
         alert("Some changes couldn't be saved. Please try again.");
       }
     } catch (error) {
-      console.error("Error during save operation:", error);
       alert("An error occurred while saving changes.");
     } finally {
       setSavingChanges(false);
@@ -705,8 +697,6 @@ export default function Threshold({ jdData = {}, jobId, jdId }) {
         job_id: jobId || jdData?.jobId
       };
       
-      console.log("Sending update request:", updateData);
-      
       // Call the API endpoint
       const response = await fetch('http://127.0.0.1:8000/api/update_dashboard_item/', {
         method: 'PUT',
@@ -717,7 +707,6 @@ export default function Threshold({ jdData = {}, jobId, jdId }) {
       });
       
       const responseText = await response.text();
-      console.log("Raw API response:", responseText);
       
       if (!response.ok) {
         throw new Error(`API error: ${response.status} - ${responseText}`);
@@ -727,14 +716,10 @@ export default function Threshold({ jdData = {}, jobId, jdId }) {
       try {
         result = JSON.parse(responseText);
       } catch (e) {
-        console.error("Error parsing JSON response:", e);
         result = { status: "error", message: "Invalid JSON response" };
       }
       
-      console.log("Dashboard item update result:", result);
-      
     } catch (error) {
-      console.error("Error updating dashboard item:", error);
       alert(`Failed to update dashboard: ${error.message}`);
       
       // Reload data to ensure consistency
@@ -753,8 +738,331 @@ export default function Threshold({ jdData = {}, jobId, jdId }) {
     }
   };
 
+  const handleAddItem = () => {
+    if (!newItemName.trim()) {
+      alert("Please enter an item name");
+      return;
+    }
+
+    // First check if the item already exists in the current dashboard
+    const currentData = Array.isArray(skillsData[0]) ? skillsData[0][0] : skillsData[0];
+    if (!currentData) return;
+    
+    const roleKey = Object.keys(currentData)[0];
+    if (!roleKey || !currentData[roleKey]) return;
+    
+    const roleData = currentData[roleKey];
+    
+    if (
+      roleData[activeDashboard] && 
+      Object.keys(roleData[activeDashboard]).includes(newItemName.trim())
+    ) {
+      alert(`"${newItemName.trim()}" already exists in this dashboard.`);
+      return;
+    }
+
+    // Add the new item to the dashboard via API
+    addDashboardItem(roleKey, activeDashboard, newItemName.trim(), null, newItemImportance)
+      .then(() => {
+        setShowAddItemPopup(false);
+        setNewItemName('');
+        setNewItemImportance(50);
+      })
+      .catch(() => {
+        // Silent error handling
+      });
+  };
+
+  const handleDeleteItem = (itemName) => {
+    setItemToDelete(itemName);
+    setShowDeleteConfirm(true);
+  };
+
+  const confirmDeleteItem = () => {
+    if (!itemToDelete) return;
+    
+    const currentData = Array.isArray(skillsData[0]) ? skillsData[0][0] : skillsData[0];
+    if (!currentData) return;
+    
+    const roleKey = Object.keys(currentData)[0];
+    if (!roleKey || !currentData[roleKey]) return;
+    
+    // Delete the item via API
+    deleteDashboardItem(roleKey, activeDashboard, itemToDelete)
+      .then(() => {
+        setShowDeleteConfirm(false);
+        setItemToDelete(null);
+      })
+      .catch(() => {
+        // Silent error handling
+      });
+  };
+
+  // Function to call the API to add a dashboard item
+  const addDashboardItem = async (roleKey, category, itemName, newRating = null, newImportance = 50) => {
+    setSavingItems(prev => ({
+      ...prev,
+      [`${category}-${itemName}`]: true
+    }));
+    
+    try {
+      setIsLoading(true);
+      
+      // Prepare data for API call
+      const updateData = {
+        role: roleKey,
+        category: category,
+        item_name: itemName,
+        new_rating: newRating,
+        new_importance: newImportance,
+        operation: "add", // Specify add operation
+        job_id: jobId || jdData?.jobId
+      };
+      
+      // Call the API endpoint
+      const response = await fetch('http://127.0.0.1:8000/api/update_dashboard_item/', {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(updateData)
+      });
+      
+      const responseText = await response.text();
+      
+      if (!response.ok) {
+        throw new Error(`API error: ${response.status} - ${responseText}`);
+      }
+      
+      let result;
+      try {
+        result = JSON.parse(responseText);
+      } catch (e) {
+        result = { status: "error", message: "Invalid JSON response" };
+      }
+      
+      // Refresh the data to ensure UI is up to date
+      try {
+        const refreshResponse = await fetch(`http://127.0.0.1:8000/api/job-description/${jobId || jdData?.jobId}`);
+        if (refreshResponse.ok) {
+          const updatedJobData = await refreshResponse.json();
+          
+          if (updatedJobData.required_skills) {
+            const parsedSkills = typeof updatedJobData.required_skills === 'string' 
+              ? JSON.parse(updatedJobData.required_skills)
+              : updatedJobData.required_skills;
+            
+            // Update the local state
+            const updatedSkillsData = JSON.parse(JSON.stringify(skillsData));
+            const currentData = Array.isArray(updatedSkillsData[0]) ? updatedSkillsData[0][0] : updatedSkillsData[0];
+            
+            if (roleKey && currentData[roleKey]) {
+              // Update the category with fresh data
+              currentData[roleKey][category] = parsedSkills[category] || {};
+              
+              // Set the updated data
+              setSkillsData(updatedSkillsData);
+            }
+          }
+        }
+      } catch (refreshError) {
+        // Silent error handling
+      }
+      
+      alert(`Successfully added "${itemName}" to the dashboard.`);
+      return result;
+      
+    } catch (error) {
+      alert(`Failed to add item: ${error.message}`);
+      throw error;
+    } finally {
+      setSavingItems(prev => {
+        const newState = {...prev};
+        delete newState[`${category}-${itemName}`];
+        return newState;
+      });
+      setIsLoading(false);
+    }
+  };
+
+  // Function to call the API to delete a dashboard item
+  const deleteDashboardItem = async (roleKey, category, itemName) => {
+    setSavingItems(prev => ({
+      ...prev,
+      [`${category}-${itemName}`]: true
+    }));
+    
+    try {
+      setIsLoading(true);
+      
+      // Prepare data for API call
+      const updateData = {
+        role: roleKey,
+        category: category,
+        item_name: itemName,
+        operation: "delete", // Specify delete operation
+        job_id: jobId || jdData?.jobId
+      };
+      
+      // Call the API endpoint
+      const response = await fetch('http://127.0.0.1:8000/api/update_dashboard_item/', {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(updateData)
+      });
+      
+      const responseText = await response.text();
+      
+      if (!response.ok) {
+        throw new Error(`API error: ${response.status} - ${responseText}`);
+      }
+      
+      let result;
+      try {
+        result = JSON.parse(responseText);
+      } catch (e) {
+        result = { status: "error", message: "Invalid JSON response" };
+      }
+      
+      // Refresh the data to ensure UI is up to date
+      try {
+        const refreshResponse = await fetch(`http://127.0.0.1:8000/api/job-description/${jobId || jdData?.jobId}`);
+        if (refreshResponse.ok) {
+          const updatedJobData = await refreshResponse.json();
+          
+          if (updatedJobData.required_skills) {
+            const parsedSkills = typeof updatedJobData.required_skills === 'string' 
+              ? JSON.parse(updatedJobData.required_skills)
+              : updatedJobData.required_skills;
+            
+            // Update the local state
+            const updatedSkillsData = JSON.parse(JSON.stringify(skillsData));
+            const currentData = Array.isArray(updatedSkillsData[0]) ? updatedSkillsData[0][0] : updatedSkillsData[0];
+            
+            if (roleKey && currentData[roleKey]) {
+              // Update the category with fresh data
+              currentData[roleKey][category] = parsedSkills[category] || {};
+              
+              // Set the updated data
+              setSkillsData(updatedSkillsData);
+            }
+          }
+        }
+      } catch (refreshError) {
+        // Silent error handling
+      }
+      
+      alert(`Successfully deleted "${itemName}" from the dashboard.`);
+      return result;
+      
+    } catch (error) {
+      alert(`Failed to delete item: ${error.message}`);
+      throw error;
+    } finally {
+      setSavingItems(prev => {
+        const newState = {...prev};
+        delete newState[`${category}-${itemName}`];
+        return newState;
+      });
+      setIsLoading(false);
+    }
+  };
+
   return (
     <div className="flex flex-col overflow-hidden">
+      {/* Add Item Popup */}
+      {showAddItemPopup && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg shadow-lg p-6 w-full max-w-md">
+            <div className="flex justify-between items-center mb-4">
+              <h3 className="text-lg font-semibold">Add New Item</h3>
+              <button 
+                onClick={() => setShowAddItemPopup(false)}
+                className="text-gray-500 hover:text-gray-700"
+              >
+                <X size={20} />
+              </button>
+            </div>
+            
+            <div className="mb-4">
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Item Name
+              </label>
+              <input
+                type="text"
+                value={newItemName}
+                onChange={(e) => setNewItemName(e.target.value)}
+                className="w-full p-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                placeholder="Enter item name"
+              />
+            </div>
+            
+            <div className="mb-6">
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Importance: {newItemImportance}%
+              </label>
+              <input
+                type="range"
+                min="1"
+                max="100"
+                value={newItemImportance}
+                onChange={(e) => setNewItemImportance(Number(e.target.value))}
+                className="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer accent-blue-500"
+              />
+            </div>
+            
+            <div className="flex justify-end space-x-3">
+              <button
+                onClick={() => setShowAddItemPopup(false)}
+                className="px-4 py-2 border border-gray-300 rounded-md text-gray-700 hover:bg-gray-50"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleAddItem}
+                className="px-4 py-2 bg-blue-500 text-white rounded-md hover:bg-blue-600 disabled:bg-blue-300"
+                disabled={!newItemName.trim()}
+              >
+                Add Item
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+      
+      {/* Delete Confirmation Dialog */}
+      {showDeleteConfirm && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg shadow-lg p-6 w-full max-w-md">
+            <div className="flex items-center mb-4 text-red-500">
+              <Trash2 size={24} className="mr-2" />
+              <h3 className="text-lg font-semibold">Confirm Deletion</h3>
+            </div>
+            
+            <p className="mb-6 text-gray-600">
+              Are you sure you want to delete "{itemToDelete}"? This action cannot be undone.
+            </p>
+            
+            <div className="flex justify-end space-x-3">
+              <button
+                onClick={() => setShowDeleteConfirm(false)}
+                className="px-4 py-2 border border-gray-300 rounded-md text-gray-700 hover:bg-gray-50"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={confirmDeleteItem}
+                className="px-4 py-2 bg-red-500 text-white rounded-md hover:bg-red-600"
+              >
+                Delete
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       <main className="flex flex-col w-full max-md:max-w-full">
         <div className="space-y-2 bg-white rounded-lg shadow-md mt-2 pt-2">
           <section className="flex flex-col justify-center self-center p-0.5 w-full bg-white max-w-[100%] max-md:max-w-full">

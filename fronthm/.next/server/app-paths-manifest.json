@@ -1,6 +1,5 @@
 {
-  "/api/threshold-ids/route": "app/api/threshold-ids/route.js",
+  "/_not-found/page": "app/_not-found/page.js",
   "/api/jd/sample-prompts/route": "app/api/jd/sample-prompts/route.js",
-  "/api/recommended-prompts/route": "app/api/recommended-prompts/route.js",
   "/hiring/page": "app/hiring/page.js"
 }

@@ -36,31 +36,15 @@ const TableRow = ({
   const handleDeleteClick = (e) => {
     e.stopPropagation();
     e.preventDefault();
-    console.log(`Delete button clicked for rowId=${rowId}, itemId=${item.id}`);
     
     // Confirm deletion
     if (window.confirm(`Are you sure you want to delete the job: ${item.role || 'Unknown'}?`)) {
-      console.log(`Confirmed deletion for itemId=${item.id}`);
       // Call the parent delete function with this row's ID
       onDelete(item.id, rowId);
-    } else {
-      console.log(`Deletion cancelled for itemId=${item.id}`);
     }
   };
   
-  // Log when this row is rendered
-  useEffect(() => {
-    console.log(`Row rendered for id=${item.id}, rowId=${rowId}`);
-    return () => {
-      console.log(`Row unmounted for id=${item.id}, rowId=${rowId}`);
-    };
-  }, []);
-  
-  // Log when expansion state changes
-  useEffect(() => {
-    console.log(`Row ${item.id} (rowId: ${rowId}): expandedRowId=${expandedRowId}, isExpanded=${isExpanded}`);
-  }, [expandedRowId, isExpanded]);
-  
+  // Return the JSX for the row
   return (
     <>
       {/* Main data row */}
@@ -160,7 +144,6 @@ const TableRow = ({
               onClick={(e) => {
                 e.stopPropagation();
                 e.preventDefault();
-                console.log(`Modify button clicked for rowId=${rowId}, itemId=${item.id}`);
                 onToggleExpand(item.id, rowId);
               }}
               className={`px-2 py-1 rounded ${isExpanded ? 'bg-red-500 text-white' : 'bg-blue-500 text-white'} hover:underline`}
@@ -225,8 +208,6 @@ const TableRow = ({
 
 // Create a wrapper component to isolate each row
 const IsolatedRow = React.memo(({ item, ...props }) => {
-  console.log(`IsolatedRow rendering for item ${item.id}`);
-  
   return (
     <TableRow
       item={item}
@@ -299,8 +280,6 @@ const JDTab = ({ jdList, setJdList, setSelectedJDForSidebar }) => {
       const response = await axios.get(`${API_URL}/job_analyses/`);
       
       if (response.data && Array.isArray(response.data)) {
-        console.log("Fetched all job analyses:", response.data);
-        
         // Transform the API response to match your jdList format
         const transformedData = response.data.map((item, index) => {
           // Check different possible locations for threshold result data
@@ -463,23 +442,19 @@ const JDTab = ({ jdList, setJdList, setSelectedJDForSidebar }) => {
   // Create a separate function for handling job deletion with more direct access to the state
   const deleteJobItem = async (jobId, rowId) => {
     try {
-      console.log(`DELETION: Trying to delete job with ID ${jobId}, rowId ${rowId}`);
-      
       // First, try to hide the row immediately with DOM manipulation to provide instant feedback
       try {
         const rowElement = document.querySelector(`tr[data-id="${jobId}"]`);
         if (rowElement) {
           rowElement.style.display = 'none';
-          console.log(`DELETION: Hidden row ${jobId} from DOM`);
         }
         
         const expandedRow = document.getElementById(`expanded-${rowId}`);
         if (expandedRow) {
           expandedRow.style.display = 'none';
-          console.log(`DELETION: Hidden expanded row for ${jobId} from DOM`);
         }
       } catch (domError) {
-        console.warn('DELETION: DOM manipulation failed:', domError);
+        // Continue with deletion even if DOM manipulation fails
       }
       
       // Call the backend API to delete the job
@@ -487,7 +462,6 @@ const JDTab = ({ jdList, setJdList, setSelectedJDForSidebar }) => {
       if (item && item.job_id) {
         try {
           const response = await axios.delete(`${API_URL}/delete-job/${item.job_id}`);
-          console.log(`DELETION: API response:`, response.data);
           
           // Show success confirmation message
           setDeleteConfirmation({
@@ -501,7 +475,6 @@ const JDTab = ({ jdList, setJdList, setSelectedJDForSidebar }) => {
             setDeleteConfirmation({ show: false, message: '', success: false });
           }, 5000);
         } catch (apiError) {
-          console.error(`DELETION: API call failed:`, apiError);
           // Show error message
           setDeleteConfirmation({
             show: true,
@@ -518,22 +491,15 @@ const JDTab = ({ jdList, setJdList, setSelectedJDForSidebar }) => {
       
       // Updated approach - use a functional update to ensure we're working with the current state
       setJdList(prevList => {
-        console.log(`DELETION: Current list has ${prevList.length} items`);
-        
         // Find the job to delete
         const jobIndex = prevList.findIndex(job => job.id === jobId);
         
         if (jobIndex === -1) {
-          console.error(`DELETION: Job with ID ${jobId} not found in list.`);
           return prevList; // Return unchanged list if job not found
         }
         
-        console.log(`DELETION: Found job at index ${jobIndex}. Deleting it.`);
-        
         // Create a new array without the found item
         const newList = [...prevList.slice(0, jobIndex), ...prevList.slice(jobIndex + 1)];
-        
-        console.log(`DELETION: New list will have ${newList.length} items`);
         return newList;
       });
       
@@ -563,10 +529,8 @@ const JDTab = ({ jdList, setJdList, setSelectedJDForSidebar }) => {
         return newThresholds;
       });
       
-      console.log(`DELETION: Job ${jobId} successfully deleted.`);
       return true;
     } catch (error) {
-      console.error("DELETION ERROR:", error);
       return false;
     }
   };
@@ -862,19 +826,15 @@ const JDTab = ({ jdList, setJdList, setSelectedJDForSidebar }) => {
       // First try to get the threshold ID associated with this job ID
       let thresholdId;
       try {
-        console.log(`Fetching threshold ID for job ID: ${jobId}`);
         const thresholdResponse = await axios.get(`/api/threshold-ids?job_id=${jobId}`);
         
         if (thresholdResponse.data && Array.isArray(thresholdResponse.data) && 
             thresholdResponse.data.length > 0 && thresholdResponse.data[0].threshold_id) {
           thresholdId = thresholdResponse.data[0].threshold_id;
-          console.log(`Found threshold ID: ${thresholdId} for job ID: ${jobId}`);
         } else if (thresholdResponse.data && thresholdResponse.data.threshold_id) {
           thresholdId = thresholdResponse.data.threshold_id;
-          console.log(`Found threshold ID: ${thresholdId} for job ID: ${jobId}`);
         }
       } catch (error) {
-        console.warn(`Failed to get threshold ID for job ID ${jobId}:`, error);
         // Continue with job ID as fallback
       }
       
@@ -883,7 +843,6 @@ const JDTab = ({ jdList, setJdList, setSelectedJDForSidebar }) => {
       
       // If we found a threshold ID, use it; otherwise fall back to job ID
       const idToUse = thresholdId || jobId;
-      console.log(`Creating ${dashboardCount} dashboards for ${thresholdId ? 'threshold' : 'job'} ID: ${idToUse}`);
       
       // Call the update_dashboards endpoint
       const response = await axios.put(
@@ -899,8 +858,6 @@ const JDTab = ({ jdList, setJdList, setSelectedJDForSidebar }) => {
       );
       
       if (response.data) {
-        console.log("FULL DASHBOARD RESPONSE:", JSON.stringify(response.data, null, 2));
-        
         // Keep track of the item ID
         const itemId = item.id;
         
@@ -918,24 +875,18 @@ const JDTab = ({ jdList, setJdList, setSelectedJDForSidebar }) => {
         // Check for values using different potential property names
         if (response.data.selection_threshold !== undefined) {
           selection_threshold = response.data.selection_threshold;
-          console.log("Found selection_threshold in response:", selection_threshold);
         } else if (response.data.matchScore !== undefined) {
           selection_threshold = response.data.matchScore;
-          console.log("Found matchScore in response:", selection_threshold);
         } else if (response.data.data && response.data.data.selection_threshold !== undefined) {
           selection_threshold = response.data.data.selection_threshold;
-          console.log("Found selection_threshold in response.data:", selection_threshold);
         }
         
         if (response.data.rejection_threshold !== undefined) {
           rejection_threshold = response.data.rejection_threshold;
-          console.log("Found rejection_threshold in response:", rejection_threshold);
         } else if (response.data.relevanceScore !== undefined) {
           rejection_threshold = response.data.relevanceScore;
-          console.log("Found relevanceScore in response:", rejection_threshold);
         } else if (response.data.data && response.data.data.rejection_threshold !== undefined) {
           rejection_threshold = response.data.data.rejection_threshold;
-          console.log("Found rejection_threshold in response.data:", rejection_threshold);
         }
         
         // Default values if nothing is found
@@ -945,11 +896,6 @@ const JDTab = ({ jdList, setJdList, setSelectedJDForSidebar }) => {
         // Ensure values are in the correct format (between 0 and 1)
         if (selection_threshold > 1) selection_threshold = selection_threshold / 100.0;
         if (rejection_threshold > 1) rejection_threshold = rejection_threshold / 100.0;
-        
-        console.log("Final threshold values to be used:", {
-          selection_threshold,
-          rejection_threshold
-        });
         
         // Update just this item in the list with the response data
         setJdList(currentList => {
@@ -976,12 +922,6 @@ const JDTab = ({ jdList, setJdList, setSelectedJDForSidebar }) => {
                 }
               };
               
-              console.log("Updated item with thresholds:", {
-                id: updatedItem.id,
-                matchScore: updatedItem.matchScore,
-                relevanceScore: updatedItem.relevanceScore
-              });
-              
               return updatedItem;
             }
             return jd;
@@ -991,16 +931,10 @@ const JDTab = ({ jdList, setJdList, setSelectedJDForSidebar }) => {
         // Now fetch all analyses to ensure consistency
         await fetchAllJobAnalyses();
         
-        // Don't auto-expand after update
-        // We'll let the user decide to expand or not
-        
         // Show success message
         alert("Dashboards created successfully! You can now modify them as needed.");
       }
     } catch (error) {
-      console.error("Error creating dashboards:", error);
-      setError(error.message || "Failed to create dashboards");
-      
       // If error occurs, fall back to full refresh
       await fetchAllJobAnalyses();
     } finally {

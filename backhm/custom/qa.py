@@ -9,16 +9,6 @@ logger = logging.getLogger(__name__)
 
 job_description_template = """Analyze this job description and extract the following information to create {num_dashboards} distinct dashboards for visualizing different aspects of the job:
 
-Basic Information:
-- Position Title: [Job Title]
-- Required Experience: [X years]
-- Location: [City, State/Country]
-- Contact: [Email and/or Phone if available]
-- Position Type: [Contract or Permanent]
-- Department: [Department name]
-- Office Timings: [Morning shift or Night shift]
-- Education Requirements: [Required education level]
-
 For Dashboard #1 (Required Skills):
 Extract key technical skills 
 
@@ -39,16 +29,6 @@ For EACH dashboard category, provide:
 - 3-7 items within that category
 
 Format your response with CONSISTENT structure as follows with one blank line between each section:
-
-Basic Information:
-- Position Title: [Job Title]
-- Required Experience: [X years]
-- Location: [City, State/Country]
-- Contact: [Email and/or Phone if available]
-- Position Type: [Contract or Permanent]
-- Department: [Department name]
-- Office Timings: [Morning shift or Night shift]
-- Education Requirements: [Required education level]
 
 Primary Responsibilities: [Main job duties]
 
@@ -98,31 +78,15 @@ qa_generation_template = """Here is a job description:
 
 Based on this job description, generate {questions_per_dashboard} specific questions for each of the {num_dashboards} dashboard categories identified in the analysis. Each question should be directly related to skills or requirements in that dashboard category.
 
-For each question, also provide:
-- Which dashboard category it relates to (e.g., Required Skills, Technical Skills, Soft Skills)
-- The importance level of the skill being assessed (High/Medium/Low based on importance percentage)
-- A brief answer (2-3 sentences) based only on information in the job description
-
 Format your response exactly as follows:
 
-DASHBOARD 1 QUESTIONS:
-Q1.1: [Question]
-Category: [Dashboard Category]
-Skill Importance: [High/Medium/Low]
-A1.1: [Answer]
+Q1: [Question]
+A1: [Answer based on the job description, 2-3 sentences]
 
-Q1.2: [Question]
-Category: [Dashboard Category]
-Skill Importance: [High/Medium/Low]
-A1.2: [Answer]
+Q2: [Question]
+A2: [Answer based on the job description, 2-3 sentences]
 
-DASHBOARD 2 QUESTIONS:
-Q2.1: [Question]
-Category: [Dashboard Category]
-Skill Importance: [High/Medium/Low]
-A2.1: [Answer]
-
-And so on for all dashboards and questions.
+And so on for all questions.
 
 The questions should focus on:
 - Skills with highest importance percentages
@@ -133,7 +97,7 @@ The questions should focus on:
 
 If the job description doesn't provide information for a particular answer, begin with "The job description doesn't specify this, but..." and then make a reasonable inference.
 
-Ensure questions are distributed across all dashboard categories, with emphasis on skills with higher importance ratings.
+Ensure questions are distributed across all dashboard categories, with equal distribution.
 
 Make sure the questions are like interview questions asking to the person and not like survey questions.
 """
@@ -180,8 +144,11 @@ def generate_job_questions(job_description, num_dashboards, questions_per_dashbo
         return "Please enter a job description to generate questions."
     
     try:
-        # Limit questions per dashboard to a reasonable range
-        questions_per_dashboard = max(1, min(int(questions_per_dashboard), 10))
+        # Calculate total questions
+        total_questions = num_dashboards * questions_per_dashboard
+        
+        # Limit questions to a reasonable range
+        total_questions = max(1, min(int(total_questions), 30))
         
         template = qa_generation_template.format(
             context=job_description,
@@ -209,41 +176,22 @@ def generate_job_questions(job_description, num_dashboards, questions_per_dashbo
         logger.error(traceback.format_exc())
         return f"Error generating questions: {str(e)}\n\nPlease try again or check the job description length."
 
-def extract_questions(qa_text):
-    """Extract just the questions from the Q&A text."""
+def extract_questions_answers(qa_text):
+    """Extract questions and answers from the simplified Q&A text."""
     if not qa_text or "Error generating questions" in qa_text:
-        return []
+        return [], []
     
     questions = []
-    # Use regex to extract questions with dashboard numbering (e.g., Q1.1, Q2.3)
-    matches = re.findall(r'Q(\d+\.\d+):\s*(.*?)(?=\s*(?:\n|$))', qa_text, re.MULTILINE)
+    answers = []
     
-    for match in matches:
-        question_num, question_text = match
-        questions.append(f"Q{question_num}: {question_text.strip()}")
+    # Use regex to extract questions and answers in simplified format
+    qa_pairs = re.findall(r'Q(\d+):\s*(.*?)\nA\1:\s*(.*?)(?=\s*(?:Q\d+:|$))', qa_text, re.DOTALL)
     
-    return questions
-
-def extract_answer(qa_text, question):
-    """Extract the answer for a specific question."""
-    if not qa_text or not question:
-        return "No answer available."
+    for num, question, answer in qa_pairs:
+        questions.append(f"Q{num}: {question.strip()}")
+        answers.append(answer.strip())
     
-    # Extract the question number from the selected question
-    match = re.match(r'Q(\d+\.\d+):', question)
-    if not match:
-        return "Invalid question format."
-    
-    question_number = match.group(1)
-    
-    # Find the corresponding answer
-    answer_pattern = rf'A{question_number}:\s*(.*?)(?=\nQ\d+\.\d+:|\nDASHBOARD \d+ QUESTIONS:|$)'
-    answer_match = re.search(answer_pattern, qa_text, re.DOTALL)
-    
-    if answer_match:
-        return answer_match.group(1).strip()
-    else:
-        return "Answer not found."
+    return questions, answers
 
 def remove_thresholds_and_adjustments(text):
     """Remove any threshold recommendations or suggested adjustments from text."""
@@ -322,9 +270,6 @@ with gr.Blocks(title="Job Description Analyzer") as app:
                     )
         
         with gr.Tab("Questions & Answers"):
-            # Store the full Q&A text
-            qa_text_state = gr.State("")
-            
             with gr.Row():
                 with gr.Column(scale=1):
                     questions_per_dashboard_slider = gr.Slider(
@@ -337,24 +282,7 @@ with gr.Blocks(title="Job Description Analyzer") as app:
                     generate_qa_button = gr.Button("Generate Questions & Answers", variant="primary")
             
             with gr.Row():
-                with gr.Column(scale=2):
-                    question_list = gr.Textbox(
-                        lines=15, 
-                        label="Questions Generated from Job Description", 
-                        interactive=False
-                    )
-                
-                with gr.Column(scale=2):
-                    question_dropdown = gr.Dropdown(
-                        label="Select a Question to See Answer", 
-                        choices=[], 
-                        interactive=True
-                    )
-                    answer_output = gr.Textbox(
-                        lines=6, 
-                        label="Answer", 
-                        interactive=False
-                    )
+                qa_output = gr.Markdown()
         
         with gr.Tab("Help & Instructions"):
             gr.Markdown("""
@@ -370,22 +298,18 @@ with gr.Blocks(title="Job Description Analyzer") as app:
             3. **Questions & Answers Tab**:
                - Adjust Questions Per Dashboard: Use the slider to specify how many questions you want per dashboard (1-10).
                - Click "Generate Questions & Answers" to create job-specific questions based on the description.
-               - You'll see all generated questions displayed immediately in the left panel.
-               - Select any question from the dropdown to view its detailed answer in the right panel.
+               - You'll see all generated questions and their answers displayed directly in the panel.
                - Questions are directly related to information found in or implied by the job description.
             
             ## Understanding the Results
             
             * **Skills Analysis**:
-              - Importance Percentage: Relative priority within category
-              - Selection Score: Contribution to candidate selection
-              - Rejection Score: Impact on candidate rejection if lacking
-              - Rating: Importance on scale of 1-10
+              - The analysis provides key skills and requirements organized into dashboard categories
+              - Each category contains the most important elements for that aspect of the job
             
             * **Q&A Feature**:
-              - Questions organized by dashboard category
-              - Skill importance level indicated for each question
-              - Answers based strictly on information in the job description
+              - Questions are designed to help prepare for interviews
+              - Answers are based strictly on information in the job description
               - Clear indication when information is inferred rather than explicitly stated
             
             ## About the Tool
@@ -407,32 +331,27 @@ with gr.Blocks(title="Job Description Analyzer") as app:
     
     # Event handlers for Q&A tab
     def on_generate_qa(job_description, num_dashboards, questions_per_dashboard):
-        """Generate Q&A and update all relevant components."""
+        """Generate Q&A and format them directly in markdown."""
         # Generate the full Q&A text
         qa_text = generate_job_questions(job_description, num_dashboards, questions_per_dashboard)
         
-        # Extract just the questions for displaying
-        questions_text = "\n".join(extract_questions(qa_text))
+        # Extract questions and answers
+        questions, answers = extract_questions_answers(qa_text)
         
-        # Extract questions for dropdown
-        questions_list = extract_questions(qa_text)
+        # Format as markdown with questions followed by answers
+        markdown_output = ""
+        for i, (question, answer) in enumerate(zip(questions, answers)):
+            markdown_output += f"### {question}\n\n{answer}\n\n"
         
-        # Default answer is empty (will be filled when a question is selected)
-        default_answer = ""
+        if not markdown_output:
+            markdown_output = "No questions and answers could be generated. Please check your job description and try again."
         
-        return qa_text, questions_text, questions_list, default_answer
+        return markdown_output
     
     generate_qa_button.click(
         fn=on_generate_qa,
         inputs=[job_description_input, num_dashboards_slider, questions_per_dashboard_slider],
-        outputs=[qa_text_state, question_list, question_dropdown, answer_output]
-    )
-    
-    # Update answer when a question is selected
-    question_dropdown.change(
-        fn=extract_answer,
-        inputs=[qa_text_state, question_dropdown],
-        outputs=[answer_output]
+        outputs=[qa_output]
     )
 
 # Launch the app

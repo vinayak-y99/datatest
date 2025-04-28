@@ -340,13 +340,13 @@ def update_dashboard_data(request: UpdateDashboardRequest):
         logger.error(traceback.format_exc())
         raise HTTPException(status_code=500, detail=f"Error updating dashboard data: {str(e)}")
 
-@CreateJD_router.put("/api/update-dashboard-data", response_model=UpdateDashboardResponse)
-def update_dashboard_data_alt(request: UpdateDashboardRequest):
-    """
-    Alternative route for update_dashboard_data with hyphenated URL to match frontend.
-    This is an alias to the main update_dashboard_data endpoint.
-    """
-    return update_dashboard_data(request)
+# @CreateJD_router.put("/api/update-dashboard-data", response_model=UpdateDashboardResponse)
+# def update_dashboard_data_alt(request: UpdateDashboardRequest):
+#     """
+#     Alternative route for update_dashboard_data with hyphenated URL to match frontend.
+#     This is an alias to the main update_dashboard_data endpoint.
+#     """
+#     return update_dashboard_data(request)
 
 def fetch_threshold_details(threshold_id: int) -> Dict[str, Any]:
     """Fetch threshold details from the existing API"""

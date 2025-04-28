@@ -3,7 +3,7 @@ from sqlalchemy.orm import Session
 from sqlalchemy import create_engine
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker
-from typing import Dict, List, Optional, Any
+from typing import Dict, List, Optional, Any, Tuple
 from datetime import datetime
 import json
 from app.utils.helpers import process_pdf
@@ -80,7 +80,9 @@ class DashboardUpdateRequest(BaseModel):
     role: str
     category: str
     item_name: str
-    new_rating: float
+    new_rating: Optional[float] = None
+    new_importance: Optional[float] = None
+    operation: Optional[str] = None  # "add", "delete", or None (default: update)
     job_id: int
     
 # Function to clean text of encoding artifacts and special characters
@@ -1264,15 +1266,67 @@ async def get_threshold_details(threshold_id: int, db: Session = Depends(get_db)
         logger.error(f"Error retrieving threshold details: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Error retrieving threshold details: {str(e)}")
 
+def recalculate_importance_rating_relationship(items: Dict[str, Dict[str, Any]], item_name: str, new_rating: Optional[float] = None, new_importance: Optional[float] = None) -> Tuple[float, float]:
+    """
+    Recalculate the relationship between importance and rating for an item.
+    When one value changes, the other is updated proportionally.
+    
+    Args:
+        items: Dictionary of items with their importance and rating values
+        item_name: Name of the item being updated
+        new_rating: New rating value (0-10) if rating was changed
+        new_importance: New importance value (0-100) if importance was changed
+        
+    Returns:
+        Tuple of (importance, rating) with updated values
+    """
+    if not items or item_name not in items:
+        # Default values if item doesn't exist
+        return (new_importance or 50.0, new_rating or 5.0)
+    
+    # Get current values
+    current_importance = items[item_name].get("importance", 0)
+    current_rating = items[item_name].get("rating", 0)
+    
+    # Get max importance from all items to maintain proportional relationship
+    try:
+        max_importance = max(item["importance"] for item in items.values() if "importance" in item)
+    except ValueError:
+        max_importance = 100  # Default if no valid importance values
+    
+    if max_importance <= 0:
+        max_importance = 100  # Prevent division by zero
+        
+    if new_rating is not None and new_rating != current_rating:
+        # Rating changed, recalculate importance
+        # The formula to derive importance from rating is:
+        # importance = rating * (max_importance / 10)
+        calculated_importance = round(new_rating * (max_importance / 10), 1)
+        logger.info(f"Recalculated importance from rating {new_rating}/10: {calculated_importance}%")
+        return (calculated_importance, new_rating)
+        
+    elif new_importance is not None and new_importance != current_importance:
+        # Importance changed, recalculate rating
+        # The formula to derive rating from importance is:
+        # rating = importance * 10 / max_importance
+        calculated_rating = round((new_importance * 10) / max_importance, 1)
+        logger.info(f"Recalculated rating from importance {new_importance}%: {calculated_rating}/10")
+        return (new_importance, calculated_rating)
+    
+    # No change or invalid inputs, return current values
+    return (current_importance, current_rating)
+
 @analyze_job_description_router.put("/api/update_dashboard_item/", response_model=Dict[str, Any])
 async def update_dashboard_item(update_data: DashboardUpdateRequest, db: Session = Depends(get_db)):
     """
-    Update a specific dashboard item's rating when the slider value changes.
-    Updates both the required_skills field in JobDescription and threshold_result in ThresholdScore.
+    Update, add, or delete dashboard items.
+    - Update: Changes rating or importance values when slider values change
+    - Add: Create a new item in the specified category
+    - Delete: Remove an item from the specified category
     """
     try:
         # Add more detailed logging
-        logger.info(f"Updating dashboard item with data: {update_data}")
+        logger.info(f"Dashboard item operation with data: {update_data}")
         
         # Retrieve job description from database
         job_description = db.query(JobDescription).filter(JobDescription.job_id == update_data.job_id).first()
@@ -1320,65 +1374,200 @@ async def update_dashboard_item(update_data: DashboardUpdateRequest, db: Session
                 logger.error("Error parsing threshold_result JSON")
                 threshold_result = {}
         
-        # Log the current state before updates
-        logger.info(f"Before update - skills_data keys: {list(skills_data.keys())}")
-        logger.info(f"Before update - threshold_result structure: {list(threshold_result.keys()) if threshold_result else 'empty'}")
-        
-        # Update the rating for the specified item in skills_data
+        # Get the category key
         category_key = update_data.category.lower()
+        
+        # Store update values for response
+        updated_importance = None
+        updated_rating = None
         item_updated = False
+        operation_result = "updated"
         
-        if category_key in skills_data and update_data.item_name in skills_data[category_key]:
-            skills_data[category_key][update_data.item_name]["rating"] = update_data.new_rating
-            logger.info(f"Updated rating for {update_data.item_name} in {category_key} category")
-            item_updated = True
+        # Check which operation to perform
+        if update_data.operation == "delete":
+            # DELETE OPERATION
+            # Check if item exists
+            if category_key in skills_data and update_data.item_name in skills_data[category_key]:
+                # Remove the item
+                del skills_data[category_key][update_data.item_name]
+                logger.info(f"Deleted item {update_data.item_name} from {category_key}")
+                item_updated = True
+                operation_result = "deleted"
+                
+                # Also delete from "skills" category if it exists there
+                if category_key == "required_skills" or category_key == "skills" or update_data.category.lower() == "required skills":
+                    if "skills" in skills_data and update_data.item_name in skills_data["skills"]:
+                        del skills_data["skills"][update_data.item_name]
+                        logger.info(f"Also deleted from skills category")
             
-            # Also update the "skills" category if this is from the skills dashboard
-            if category_key == "required_skills" or category_key == "skills" or update_data.category.lower() == "required skills":
-                if "skills" in skills_data and update_data.item_name in skills_data["skills"]:
-                    skills_data["skills"][update_data.item_name]["rating"] = update_data.new_rating
-                    logger.info(f"Also updated rating in skills category")
-        else:
-            logger.warning(f"Item {update_data.item_name} not found in category {category_key}")
-            # Try to find which categories exist and whether the item exists in any of them
-            for cat_key in skills_data.keys():
-                if update_data.item_name in skills_data.get(cat_key, {}):
-                    logger.info(f"Found item in alternate category: {cat_key}")
+            # Update threshold_result to match
+            if "skills_data" in threshold_result:
+                role_key = update_data.role
+                if role_key in threshold_result["skills_data"]:
+                    role_data = threshold_result["skills_data"][role_key]
+                    
+                    if category_key in role_data and update_data.item_name in role_data[category_key]:
+                        del role_data[category_key][update_data.item_name]
+                        item_updated = True
+                    
+                    if "skills" in role_data and update_data.item_name in role_data["skills"]:
+                        del role_data["skills"][update_data.item_name]
+                        item_updated = True
         
-        # Update the threshold_result data structure
-        if "skills_data" in threshold_result:
-            role_key = update_data.role
-            if role_key in threshold_result["skills_data"]:
-                role_data = threshold_result["skills_data"][role_key]
-                logger.info(f"Found role {role_key} in threshold_result")
-                
-                # Update in the main category
-                if category_key in role_data and update_data.item_name in role_data[category_key]:
-                    role_data[category_key][update_data.item_name]["rating"] = update_data.new_rating
-                    logger.info(f"Updated rating in threshold_result for {category_key}")
-                    item_updated = True
-                else:
-                    logger.warning(f"Category {category_key} or item {update_data.item_name} not found in role_data")
-                    # List available categories and items
-                    for cat in role_data.keys():
-                        logger.info(f"Available category: {cat}")
-                        logger.info(f"Items in {cat}: {list(role_data[cat].keys()) if role_data[cat] else 'none'}")
-                
-                # Also update in "skills" if it exists
-                if "skills" in role_data and update_data.item_name in role_data["skills"]:
-                    role_data["skills"][update_data.item_name]["rating"] = update_data.new_rating
-                    logger.info(f"Updated rating in threshold_result skills category")
-                    item_updated = True
+        elif update_data.operation == "add":
+            # ADD OPERATION
+            # Validate required fields for addition
+            if not update_data.new_importance and not update_data.new_rating:
+                # Use default values if none provided
+                default_importance = 50.0
+                default_rating = 5.0
+                logger.info(f"Using default values for new item: importance={default_importance}%, rating={default_rating}/10")
+                updated_importance = default_importance
+                updated_rating = default_rating
             else:
-                logger.warning(f"Role {role_key} not found in threshold_result.skills_data")
-                available_roles = list(threshold_result["skills_data"].keys()) if "skills_data" in threshold_result else []
-                logger.info(f"Available roles: {available_roles}")
+                # If one value is provided, calculate the other
+                if category_key not in skills_data:
+                    skills_data[category_key] = {}
+                
+                importance, rating = recalculate_importance_rating_relationship(
+                    skills_data[category_key],
+                    update_data.item_name,
+                    update_data.new_rating,
+                    update_data.new_importance
+                )
+                updated_importance = importance
+                updated_rating = rating
+            
+            # Add the item to skills_data
+            if category_key not in skills_data:
+                skills_data[category_key] = {}
+            
+            skills_data[category_key][update_data.item_name] = {
+                "importance": updated_importance,
+                "rating": updated_rating
+            }
+            
+            logger.info(f"Added new item {update_data.item_name} to {category_key}: importance={updated_importance}%, rating={updated_rating}/10")
+            item_updated = True
+            operation_result = "added"
+            
+            # Also add to "skills" category if appropriate
+            if category_key == "required_skills" or category_key == "skills" or update_data.category.lower() == "required skills":
+                if "skills" not in skills_data:
+                    skills_data["skills"] = {}
+                skills_data["skills"][update_data.item_name] = {
+                    "importance": updated_importance,
+                    "rating": updated_rating
+                }
+                logger.info(f"Also added to skills category")
+            
+            # Update threshold_result to match
+            if "skills_data" in threshold_result:
+                role_key = update_data.role
+                if role_key in threshold_result["skills_data"]:
+                    role_data = threshold_result["skills_data"][role_key]
+                    
+                    if category_key not in role_data:
+                        role_data[category_key] = {}
+                    
+                    role_data[category_key][update_data.item_name] = {
+                        "importance": updated_importance,
+                        "rating": updated_rating
+                    }
+                    
+                    # Also add to skills category in threshold_result if needed
+                    if category_key == "required_skills" or category_key == "skills" or update_data.category.lower() == "required skills":
+                        if "skills" not in role_data:
+                            role_data["skills"] = {}
+                        role_data["skills"][update_data.item_name] = {
+                            "importance": updated_importance,
+                            "rating": updated_rating
+                        }
+        
         else:
-            logger.warning("skills_data key not found in threshold_result")
-            logger.info(f"threshold_result structure: {threshold_result}")
+            # REGULAR UPDATE OPERATION
+            # Validate that at least one update field is provided
+            if update_data.new_rating is None and update_data.new_importance is None:
+                raise HTTPException(status_code=400, detail="Either new_rating or new_importance must be provided for update operation")
+                
+            if category_key in skills_data and update_data.item_name in skills_data[category_key]:
+                # Calculate new importance and rating values
+                importance, rating = recalculate_importance_rating_relationship(
+                    skills_data[category_key],
+                    update_data.item_name,
+                    update_data.new_rating,
+                    update_data.new_importance
+                )
+                
+                # Update both values to maintain consistency
+                skills_data[category_key][update_data.item_name]["importance"] = importance
+                skills_data[category_key][update_data.item_name]["rating"] = rating
+                
+                updated_importance = importance
+                updated_rating = rating
+                
+                logger.info(f"Updated item {update_data.item_name} in {category_key}: importance={importance}%, rating={rating}/10")
+                item_updated = True
+                
+                # Also update the "skills" category if this is from the skills dashboard
+                if category_key == "required_skills" or category_key == "skills" or update_data.category.lower() == "required skills":
+                    if "skills" in skills_data and update_data.item_name in skills_data["skills"]:
+                        skills_data["skills"][update_data.item_name]["importance"] = importance
+                        skills_data["skills"][update_data.item_name]["rating"] = rating
+                        logger.info(f"Also updated values in skills category")
+            else:
+                logger.warning(f"Item {update_data.item_name} not found in category {category_key}")
+                # Try to find which categories exist and whether the item exists in any of them
+                for cat_key in skills_data.keys():
+                    if update_data.item_name in skills_data.get(cat_key, {}):
+                        logger.info(f"Found item in alternate category: {cat_key}")
+            
+            # Update the threshold_result data structure for update operation
+            if "skills_data" in threshold_result:
+                role_key = update_data.role
+                if role_key in threshold_result["skills_data"]:
+                    role_data = threshold_result["skills_data"][role_key]
+                    logger.info(f"Found role {role_key} in threshold_result")
+                    
+                    # Update in the main category
+                    if category_key in role_data and update_data.item_name in role_data[category_key]:
+                        role_data[category_key][update_data.item_name]["importance"] = updated_importance or importance
+                        role_data[category_key][update_data.item_name]["rating"] = updated_rating or rating
+                        logger.info(f"Updated values in threshold_result for {category_key}")
+                        item_updated = True
+                    else:
+                        logger.warning(f"Category {category_key} or item {update_data.item_name} not found in role_data")
+                        # List available categories and items
+                        for cat in role_data.keys():
+                            logger.info(f"Available category: {cat}")
+                            logger.info(f"Items in {cat}: {list(role_data[cat].keys()) if role_data[cat] else 'none'}")
+                    
+                    # Also update in "skills" if it exists
+                    if "skills" in role_data and update_data.item_name in role_data["skills"]:
+                        role_data["skills"][update_data.item_name]["importance"] = updated_importance or importance
+                        role_data["skills"][update_data.item_name]["rating"] = updated_rating or rating
+                        logger.info(f"Updated values in threshold_result skills category")
+                        item_updated = True
+                else:
+                    logger.warning(f"Role {role_key} not found in threshold_result.skills_data")
+                    available_roles = list(threshold_result["skills_data"].keys()) if "skills_data" in threshold_result else []
+                    logger.info(f"Available roles: {available_roles}")
+            else:
+                logger.warning("skills_data key not found in threshold_result")
+                logger.info(f"threshold_result structure: {threshold_result}")
         
         if not item_updated:
-            logger.warning("No items were updated in either skills_data or threshold_result")
+            if update_data.operation == "delete":
+                logger.warning(f"Item {update_data.item_name} not found to delete")
+                return {
+                    "status": "warning",
+                    "message": f"Item {update_data.item_name} not found to delete",
+                    "job_id": update_data.job_id,
+                    "item": update_data.item_name,
+                    "operation": "delete"
+                }
+            else:
+                logger.warning("No items were updated in either skills_data or threshold_result")
         
         # Save the updated data back to the database
         job_description.required_skills = json.dumps(skills_data)
@@ -1398,10 +1587,12 @@ async def update_dashboard_item(update_data: DashboardUpdateRequest, db: Session
         
         return {
             "status": "success",
-            "message": "Dashboard item updated successfully",
+            "message": f"Dashboard item {operation_result} successfully",
             "job_id": update_data.job_id,
             "item": update_data.item_name,
-            "new_rating": update_data.new_rating,
+            "new_rating": updated_rating,
+            "new_importance": updated_importance,
+            "operation": update_data.operation or "update",
             "threshold_id": threshold.threshold_id
         }
     except HTTPException as he:
@@ -1410,8 +1601,8 @@ async def update_dashboard_item(update_data: DashboardUpdateRequest, db: Session
         raise he
     except Exception as e:
         db.rollback()
-        logger.error(f"Error updating dashboard item: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"Error updating dashboard item: {str(e)}")
+        logger.error(f"Error managing dashboard item: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Error managing dashboard item: {str(e)}")
 
 if __name__ == "__main__":
     import uvicorn
