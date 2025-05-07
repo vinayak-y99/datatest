@@ -15,6 +15,10 @@ from fastapi import FastAPI, HTTPException
 import requests
 import random
 import google.generativeai as genai
+from datetime import datetime
+from sqlalchemy import update
+from app.models.base import ThresholdScore, JobDescription
+from app.database import get_db
 
 
 # Configure logging
@@ -258,7 +262,6 @@ class UpdateDashboardResponse(BaseModel):
     job_id: Optional[int] = None
     status: str
     message: str
-    updated_at: str
 
 @CreateJD_router.put("/api/update_dashboard_data/", response_model=UpdateDashboardResponse)
 def update_dashboard_data(request: UpdateDashboardRequest):
@@ -324,7 +327,6 @@ def update_dashboard_data(request: UpdateDashboardRequest):
         logger.info(f"Changes detected: {', '.join(changes[:5])}{' and more...' if len(changes) > 5 else ''}")
         
         # Get current timestamp
-        from datetime import datetime
         current_time = datetime.now().isoformat()
         
         return UpdateDashboardResponse(
@@ -720,12 +722,20 @@ def generate_fallback_prompts(count: int, role: str, categories: List[str], thre
     
     return fallbacks
 
-# New class for processing prompts
+# Update the ProcessPromptRequest model
 class ProcessPromptRequest(BaseModel):
-    prompt: str
-    threshold_id: int
-    job_id: Optional[int] = None
-    current_dashboards: Optional[Dict[str, Any]] = None
+    prompt: str = Field(..., description="The prompt to modify the dashboard")
+    threshold_id: int = Field(..., description="The ID of the threshold to modify")
+    job_id: Optional[int] = Field(None, description="Optional job ID")
+
+    class Config:
+        json_schema_extra = {
+            "example": {
+                "prompt": "Increase the importance of Python skills by 20%",
+                "threshold_id": 123,
+                "job_id": 456
+            }
+        }
 
 class ProcessPromptResponse(BaseModel):
     threshold_id: int
@@ -735,193 +745,14 @@ class ProcessPromptResponse(BaseModel):
     status: str
     message: str
 
-@CreateJD_router.post("/api/process-prompt", response_model=ProcessPromptResponse)
-def process_prompt(request: ProcessPromptRequest):
-    """
-    Process a custom prompt to modify dashboard data.
-    
-    Args:
-        request: Object containing the prompt, threshold_id, job_id, and optional current dashboard data
-        
-    Returns:
-        Object with modified dashboard data and change summary
-    """
-    try:
-        prompt = request.prompt
-        threshold_id = request.threshold_id
-        job_id = request.job_id
-        
-        logger.info(f"Processing prompt for threshold_id={threshold_id}, job_id={job_id}")
-        logger.info(f"Prompt: {prompt}")
-        
-        # Get the current dashboard data
-        current_dashboards = request.current_dashboards
-        if not current_dashboards:
-            # Fetch threshold details if not provided
-            try:
-                threshold_data = fetch_threshold_details(threshold_id)
-                if "threshold_result" in threshold_data and "skills_data" in threshold_data["threshold_result"]:
-                    current_dashboards = threshold_data["threshold_result"]["skills_data"]
-                else:
-                    logger.warning(f"Could not find skills_data in threshold details for ID {threshold_id}")
-                    current_dashboards = {}
-            except Exception as fetch_error:
-                logger.error(f"Error fetching threshold details: {str(fetch_error)}")
-                current_dashboards = {}
-        
-        if not current_dashboards:
-            raise HTTPException(status_code=404, detail="No dashboard data found to modify")
-        
-        # Generate the prompt for modifying dashboards
-        modified_dashboards, changes = apply_prompt_modifications(current_dashboards, prompt, threshold_id)
-        
-        if not changes:
-            logger.warning(f"No changes detected for prompt: {prompt}")
-            modified_dashboards = current_dashboards
-            changes = ["No changes could be detected in the prompt, please try using different wording"]
-        
-        # Update the database with the modified dashboard data
-        try:
-            # This would be where you'd update your actual database
-            # For now, we'll just log the changes
-            logger.info(f"Would update threshold_scores where threshold_id={threshold_id}")
-            logger.info(f"Changes: {', '.join(changes[:5])}{' (and more)' if len(changes) > 5 else ''}")
-            
-            # Get current timestamp
-            from datetime import datetime
-            current_time = datetime.now().isoformat()
-            
-            # Since the update is successful, return the modified dashboards
-            return ProcessPromptResponse(
-                threshold_id=threshold_id,
-                job_id=job_id,
-                modified_dashboards=modified_dashboards,
-                changes=changes,
-                status="success",
-                message=f"Successfully applied {len(changes)} changes based on prompt"
-            )
-        except Exception as update_error:
-            logger.error(f"Error updating database: {str(update_error)}")
-            raise HTTPException(status_code=500, detail=f"Error updating database: {str(update_error)}")
-        
-    except HTTPException:
-        # Re-raise HTTP exceptions
-        raise
-    except Exception as e:
-        logger.error(f"Error processing prompt: {str(e)}")
-        logger.error(traceback.format_exc())
-        raise HTTPException(status_code=500, detail=f"Error processing prompt: {str(e)}")
+def generate_dashboard_modification_prompt(original_analysis, modification_request):
+    """Generate a prompt to modify existing dashboard analysis"""
+    template = f"""You are an expert dashboard customization assistant. I have already analyzed a job description and created the following dashboards:
 
-def apply_prompt_modifications(current_dashboards: Dict[str, Any], prompt: str, threshold_id: int) -> tuple:
-    """
-    Apply modifications to dashboards based on the prompt.
-    This function parses the prompt and makes appropriate changes.
-    
-    Args:
-        current_dashboards: Current dashboard data
-        prompt: The prompt text containing modification instructions
-        threshold_id: ID of the threshold for logging
-        
-    Returns:
-        Tuple containing (modified_dashboards, list_of_changes)
-    """
-    try:
-        # Deep clone the current dashboards to avoid modifying the original
-        modified_dashboards = json.loads(json.dumps(current_dashboards))
-        changes = []
-        
-        # Clean and prepare the prompt
-        prompt_lines = [line.strip() for line in prompt.split('\n') if line.strip()]
-        combined_prompt = ' '.join(prompt_lines)
-        logger.info(f"Processing prompt: {combined_prompt}")
-        
-        # Convert to AI-based modifications if the dashboard structure is complex
-        # or if the prompt requires advanced understanding
-        if is_complex_modification(prompt):
-            return process_with_ai(current_dashboards, prompt, threshold_id)
-        
-        # Otherwise, use rule-based parsing for simple modifications
-        # Check for different types of modifications
-        
-        # 1. Rebalance importance values
-        rebalance_match = re.search(r"Rebalance.*?Dashboard\s+#(\d+)\s*-\s*([^\.]+)\s+to\s+increase\s+([^\.]+)\s+importance\s+by\s+(\d+\.?\d*)%", combined_prompt, re.IGNORECASE)
-        if rebalance_match:
-            dashboard_num = rebalance_match.group(1)
-            category = rebalance_match.group(2).strip()
-            skill_to_increase = rebalance_match.group(3).strip()
-            increase_amount = float(rebalance_match.group(4))
-            
-            changes.extend(rebalance_dashboard(modified_dashboards, dashboard_num, category, skill_to_increase, increase_amount))
-        
-        # 2. Add new item to dashboard
-        add_item_match = re.search(r"Add\s+['\"](.*?)['\"]\s+with\s+(\d+\.?\d*)%\s+importance\s+to\s+Dashboard\s+#(\d+)\s*-\s*([^\.]+)", combined_prompt, re.IGNORECASE)
-        if add_item_match:
-            new_item = add_item_match.group(1)
-            importance = float(add_item_match.group(2))
-            dashboard_num = add_item_match.group(3)
-            category = add_item_match.group(4).strip()
-            
-            changes.extend(add_item_to_dashboard(modified_dashboards, dashboard_num, category, new_item, importance))
-        
-        # 3. Set importance or rating directly
-        importance_matches = re.finditer(r"(?:Set|Change|Update)\s+(.*?)(?:'s)?\s+(?:importance|selection score)\s+to\s+(\d+\.?\d*)%", combined_prompt, re.IGNORECASE)
-        for match in importance_matches:
-            skill_name = match.group(1).strip()
-            new_value = float(match.group(2))
-            
-            changes.extend(set_skill_importance(modified_dashboards, skill_name, new_value))
-        
-        rating_matches = re.finditer(r"(?:Set|Change|Update)\s+(.*?)(?:'s)?\s+rating\s+to\s+(\d+\.?\d*)", combined_prompt, re.IGNORECASE)
-        for match in rating_matches:
-            skill_name = match.group(1).strip()
-            new_rating = float(match.group(2))
-            
-            changes.extend(set_skill_rating(modified_dashboards, skill_name, new_rating))
-        
-        # If no changes were detected with rule-based approach, try AI
-        if not changes:
-            return process_with_ai(current_dashboards, prompt, threshold_id)
-        
-        return modified_dashboards, changes
-        
-    except Exception as e:
-        logger.error(f"Error applying prompt modifications: {str(e)}")
-        logger.error(traceback.format_exc())
-        # Return original dashboards if there's an error
-        return current_dashboards, [f"Error: {str(e)}"]
-
-def is_complex_modification(prompt: str) -> bool:
-    """Determine if the prompt requires AI processing"""
-    complex_keywords = [
-        "merge", "combine", "create new", "split", "prioritize across", 
-        "recalibrate", "strategically", "complex", "comprehensive", "holistic"
-    ]
-    
-    prompt_lower = prompt.lower()
-    # Check if any complex keywords are in the prompt
-    for keyword in complex_keywords:
-        if keyword in prompt_lower:
-            return True
-    
-    # Check if prompt is long and complex
-    if len(prompt.split()) > 25:
-        return True
-    
-    return False
-
-def process_with_ai(current_dashboards: Dict[str, Any], prompt: str, threshold_id: int) -> tuple:
-    """Process complex modifications using AI"""
-    try:
-        # Convert current dashboards to a readable text format
-        dashboard_text = convert_dashboards_to_text(current_dashboards)
-        
-        # Create prompt for the AI
-        ai_prompt = f"""You are an expert dashboard customization assistant. I have already analyzed a job description and created the following dashboards:
-
-{dashboard_text}
+{original_analysis}
 
 Now I need you to modify these dashboards based on the following request:
-{prompt}
+{modification_request}
 
 When making modifications, please follow these guidelines:
 1. Maintain the same format for each item: "[Item Name]: Importance: [X]% Rating: [R]/10"
@@ -934,30 +765,223 @@ When making modifications, please follow these guidelines:
 Return the complete modified dashboard set with all dashboards, not just the changed ones.
 Format your response exactly as the original but with the requested changes implemented.
 """
+    return template
+
+def modify_dashboards(original_analysis, modification_request):
+    """Call AI service to modify the dashboard analysis."""
+    try:
+        if not original_analysis or original_analysis.strip() == "":
+            return "Please provide the current dashboard analysis to modify."
+        
+        if not modification_request or modification_request.strip() == "":
+            return "Please provide a modification request."
+        
+        # Generate the modification prompt
+        template = generate_dashboard_modification_prompt(original_analysis, modification_request)
         
         # Configure the API
-        api_key = os.environ.get("GEMINI_API_KEY", "AIzaSyB3ZN_ICuWtHUypL1vhvORWA7KwoNiKVMw")
+        api_key = "AIzaSyB3ZN_ICuWtHUypL1vhvORWA7KwoNiKVMw"
         genai.configure(api_key=api_key)
         
         # Initialize the model
         model = genai.GenerativeModel('gemini-2.0-flash')
         
         # Generate the modified analysis
-        response = model.generate_content(ai_prompt)
+        response = model.generate_content(template)
         
-        # Parse the AI response back into dashboard structure
-        modified_text = response.text
-        modified_dashboards = convert_text_to_dashboards(modified_text, current_dashboards)
-        
-        # Calculate changes between original and modified dashboards
-        changes = calculate_changes(current_dashboards, modified_dashboards)
-        
-        return modified_dashboards, changes
+        # Return the modified analysis
+        return response.text
         
     except Exception as e:
-        logger.error(f"Error processing with AI: {str(e)}")
+        logger.error(f"Error modifying dashboards: {str(e)}")
         logger.error(traceback.format_exc())
-        return current_dashboards, [f"Error processing with AI: {str(e)}"]
+        return f"Error modifying dashboards: {str(e)}"
+
+# New function to extract dashboard categories and items
+def extract_dashboard_info(analysis_text):
+    """Extract dashboard categories and items from analysis text"""
+    dashboard_info = []
+    
+    # Regular expression to find dashboard titles
+    dashboard_pattern = r"Dashboard #(\d+) - ([^:]+):"
+    dashboards = re.finditer(dashboard_pattern, analysis_text)
+    
+    for match in dashboards:
+        dashboard_num = match.group(1)
+        category = match.group(2).strip()
+        
+        # Find the start position of this dashboard
+        start_pos = match.start()
+        
+        # Find the next dashboard or end of text
+        next_match = re.search(r"Dashboard #\d+", analysis_text[start_pos+1:])
+        if next_match:
+            end_pos = start_pos + 1 + next_match.start()
+        else:
+            end_pos = len(analysis_text)
+        
+        # Extract the section for this dashboard
+        dashboard_section = analysis_text[start_pos:end_pos]
+        
+        # Extract items in this dashboard
+        items = []
+        item_pattern = r"- ([^:]+): Importance: (\d+\.?\d*)% Rating: (\d+\.?\d*)/10"
+        for item_match in re.finditer(item_pattern, dashboard_section):
+            item_name = item_match.group(1).strip()
+            importance = float(item_match.group(2))
+            rating = float(item_match.group(3))
+            items.append({"name": item_name, "importance": importance, "rating": rating})
+        
+        dashboard_info.append({
+            "number": dashboard_num,
+            "category": category,
+            "items": items
+        })
+    
+    return dashboard_info
+
+@CreateJD_router.put("/api/process-prompt", response_model=ProcessPromptResponse)
+async def process_prompt(request: ProcessPromptRequest):
+    """
+    Process a custom prompt to modify the threshold_result data in threshold_scores table.
+    
+    Args:
+        request: Object containing the prompt and threshold_id
+        
+    Returns:
+        Object with modified dashboard data and change summary
+    """
+    try:
+        prompt = request.prompt
+        threshold_id = request.threshold_id
+        
+        logger.info(f"Processing prompt for threshold_id={threshold_id}")
+        logger.info(f"Prompt: {prompt}")
+        
+        # Fetch current threshold_result from database
+        db = next(get_db())
+        threshold = db.query(ThresholdScore).filter(ThresholdScore.threshold_id == threshold_id).first()
+        
+        if not threshold or not threshold.threshold_result:
+            raise HTTPException(status_code=404, detail="No threshold data found to modify")
+        
+        try:
+            # Handle threshold_result based on its type
+            if isinstance(threshold.threshold_result, str):
+                current_data = json.loads(threshold.threshold_result)
+            elif isinstance(threshold.threshold_result, dict):
+                current_data = threshold.threshold_result
+            else:
+                raise HTTPException(status_code=400, detail="Invalid threshold_result data type")
+        except json.JSONDecodeError as e:
+            logger.error(f"Error parsing threshold_result JSON: {str(e)}")
+            raise HTTPException(status_code=400, detail="Invalid threshold_result data format")
+        
+        # Get the current dashboard content
+        current_content = current_data.get("content", "")
+        if not current_content:
+            raise HTTPException(status_code=400, detail="No dashboard content found in threshold_result")
+        
+        # Extract current dashboard info
+        current_dashboard_info = extract_dashboard_info(current_content)
+        
+        # Generate the modification prompt
+        modification_prompt = generate_dashboard_modification_prompt(current_content, prompt)
+        
+        # Modify the dashboards using AI
+        modified_content = modify_dashboards(current_content, prompt)
+        
+        # Extract the modified dashboard info
+        modified_dashboard_info = extract_dashboard_info(modified_content)
+        
+        # Convert modified dashboard info to the required structure
+        modified_structure = convert_dashboard_info_to_structure(modified_dashboard_info)
+        
+        # Calculate changes between original and modified dashboards
+        changes = []
+        for orig_dash, mod_dash in zip(current_dashboard_info, modified_dashboard_info):
+            if orig_dash["category"] != mod_dash["category"]:
+                changes.append(f"Changed category from '{orig_dash['category']}' to '{mod_dash['category']}'")
+            
+            # Compare items
+            orig_items = {item["name"]: item for item in orig_dash["items"]}
+            mod_items = {item["name"]: item for item in mod_dash["items"]}
+            
+            # Check for removed items
+            for item_name in orig_items:
+                if item_name not in mod_items:
+                    changes.append(f"Removed '{item_name}' from {orig_dash['category']}")
+            
+            # Check for added items
+            for item_name in mod_items:
+                if item_name not in orig_items:
+                    changes.append(f"Added '{item_name}' to {mod_dash['category']} with importance {mod_items[item_name]['importance']}%")
+            
+            # Check for modified items
+            for item_name in set(orig_items.keys()) & set(mod_items.keys()):
+                orig_item = orig_items[item_name]
+                mod_item = mod_items[item_name]
+                
+                if abs(orig_item["importance"] - mod_item["importance"]) > 0.1:
+                    changes.append(f"Changed '{item_name}' importance from {orig_item['importance']}% to {mod_item['importance']}%")
+                if abs(orig_item["rating"] - mod_item["rating"]) > 0.1:
+                    changes.append(f"Changed '{item_name}' rating from {orig_item['rating']}/10 to {mod_item['rating']}/10")
+        
+        if not changes:
+            logger.warning(f"No changes detected for prompt: {prompt}")
+            changes = ["No changes could be detected in the prompt, please try using different wording"]
+        
+        # Update the threshold_result in the database
+        try:
+            # Update the threshold_result with both content and skills_data
+            updated_data = {
+                "content": modified_content,
+                "skills_data": modified_structure,
+                "modified_at": datetime.now().isoformat()
+            }
+            
+            # Preserve any other existing data in threshold_result
+            for key, value in current_data.items():
+                if key not in ["content", "skills_data", "modified_at"]:
+                    updated_data[key] = value
+            
+            # Convert the updated_data to JSON string before storing
+            updated_data_json = json.dumps(updated_data)
+            
+            # Update the database
+            stmt = update(ThresholdScore).where(
+                ThresholdScore.threshold_id == threshold_id
+            ).values(
+                threshold_result=updated_data_json,
+                updated_at=datetime.now().isoformat()
+            )
+            
+            db.execute(stmt)
+            db.commit()
+            
+            logger.info(f"Successfully updated threshold_result for threshold_id={threshold_id}")
+            logger.info(f"Changes: {', '.join(changes[:5])}{' (and more)' if len(changes) > 5 else ''}")
+            
+            return ProcessPromptResponse(
+                threshold_id=threshold_id,
+                job_id=request.job_id,
+                modified_dashboards=updated_data,
+                changes=changes,
+                status="success",
+                message=f"Successfully applied {len(changes)} changes based on prompt"
+            )
+            
+        except Exception as update_error:
+            logger.error(f"Error updating database: {str(update_error)}")
+            raise HTTPException(status_code=500, detail=f"Error updating database: {str(update_error)}")
+        
+    except HTTPException:
+        # Re-raise HTTP exceptions
+        raise
+    except Exception as e:
+        logger.error(f"Error processing prompt: {str(e)}")
+        logger.error(traceback.format_exc())
+        raise HTTPException(status_code=500, detail=f"Error processing prompt: {str(e)}")
 
 def convert_dashboards_to_text(dashboards: Dict[str, Any]) -> str:
     """Convert dashboard data structure to formatted text"""
@@ -1084,269 +1108,27 @@ def calculate_changes(original: Dict[str, Any], modified: Dict[str, Any]) -> Lis
     
     return changes
 
-def rebalance_dashboard(dashboards: Dict[str, Any], dashboard_num: str, category: str, skill_to_increase: str, increase_amount: float) -> List[str]:
-    """Rebalance a dashboard by increasing one skill's importance and adjusting others"""
-    changes = []
+def convert_dashboard_info_to_structure(dashboard_info: List[Dict]) -> Dict[str, Any]:
+    """Convert dashboard info to the required structure format"""
+    if not dashboard_info:
+        return {}
     
-    try:
-        # Get the first role (assuming there's only one)
-        if len(dashboards) == 0:
-            return ["Error: No dashboard data"]
-        
-        role_key = next(iter(dashboards))
-        role_data = dashboards[role_key]
-        
-        # Find the right category
-        if category not in role_data:
-            # Try to find the category by number
-            dashboard_count = 1
-            target_category = None
-            for cat in role_data:
-                if dashboard_count == int(dashboard_num):
-                    target_category = cat
-                    break
-                dashboard_count += 1
-            
-            if target_category:
-                category = target_category
-            else:
-                return [f"Error: Category for Dashboard #{dashboard_num} not found"]
-        
-        # Get the items in this category
-        items = role_data[category]
-        
-        # Find the skill to increase
-        if skill_to_increase not in items:
-            # Try to find a partial match
-            for item_name in items:
-                if skill_to_increase.lower() in item_name.lower():
-                    skill_to_increase = item_name
-                    break
-            
-            if skill_to_increase not in items:
-                return [f"Error: Skill '{skill_to_increase}' not found in {category}"]
-        
-        # Calculate current total importance
-        total_importance = sum(item["importance"] for item in items.values())
-        
-        # Get current importance of the skill
-        current_importance = items[skill_to_increase]["importance"]
-        
-        # Calculate new importance
-        new_importance = min(current_importance + increase_amount, 100.0)
-        
-        # Calculate how much we need to reduce other skills
-        reduction_needed = new_importance - current_importance
-        
-        # Distribute reduction proportionally among other skills
-        other_skills_total = total_importance - current_importance
-        if other_skills_total <= 0:
-            return [f"Error: Cannot rebalance as '{skill_to_increase}' has 100% importance"]
-        
-        # Update the target skill
-        items[skill_to_increase]["importance"] = new_importance
-        changes.append(f"Increased '{skill_to_increase}' importance from {current_importance}% to {new_importance}%")
-        
-        # Reduce other skills proportionally
-        for item_name, item_data in items.items():
-            if item_name != skill_to_increase:
-                original_value = item_data["importance"]
-                proportion = item_data["importance"] / other_skills_total
-                reduction = reduction_needed * proportion
-                new_value = max(0, original_value - reduction)
-                item_data["importance"] = round(new_value, 1)
-                changes.append(f"Decreased '{item_name}' importance from {original_value}% to {new_value}%")
-        
-        # Recalculate ratings
-        max_importance = max(item["importance"] for item in items.values())
-        if max_importance > 0:
-            for item_name, item_data in items.items():
-                old_rating = item_data["rating"]
-                new_rating = round((item_data["importance"] * 10) / max_importance, 1)
-                item_data["rating"] = new_rating
-                if abs(old_rating - new_rating) > 0.1:
-                    changes.append(f"Updated '{item_name}' rating from {old_rating}/10 to {new_rating}/10")
-        
-        return changes
-        
-    except Exception as e:
-        logger.error(f"Error in rebalance_dashboard: {str(e)}")
-        return [f"Error rebalancing dashboard: {str(e)}"]
-
-def add_item_to_dashboard(dashboards: Dict[str, Any], dashboard_num: str, category: str, new_item: str, importance: float) -> List[str]:
-    """Add a new item to a dashboard and adjust other items' importance"""
-    changes = []
+    # Create a structure with a default role
+    structure = {"Default Role": {}}
     
-    try:
-        # Get the first role (assuming there's only one)
-        if len(dashboards) == 0:
-            return ["Error: No dashboard data"]
+    # Convert each dashboard to the structure format
+    for dashboard in dashboard_info:
+        category = dashboard["category"]
+        structure["Default Role"][category] = {}
         
-        role_key = next(iter(dashboards))
-        role_data = dashboards[role_key]
-        
-        # Find the right category
-        if category not in role_data:
-            # Try to find the category by number
-            dashboard_count = 1
-            target_category = None
-            for cat in role_data:
-                if dashboard_count == int(dashboard_num):
-                    target_category = cat
-                    break
-                dashboard_count += 1
-            
-            if target_category:
-                category = target_category
-            else:
-                return [f"Error: Category for Dashboard #{dashboard_num} not found"]
-        
-        # Get the items in this category
-        items = role_data[category]
-        
-        # Make sure item doesn't already exist
-        if new_item in items:
-            old_importance = items[new_item]["importance"]
-            items[new_item]["importance"] = importance
-            changes.append(f"Updated '{new_item}' importance from {old_importance}% to {importance}%")
-        else:
-            # Add the new item
-            items[new_item] = {
-                "importance": importance,
-                "rating": 0  # Will be recalculated
+        # Add each item
+        for item in dashboard["items"]:
+            structure["Default Role"][category][item["name"]] = {
+                "importance": item["importance"],
+                "rating": item["rating"]
             }
-            changes.append(f"Added new item '{new_item}' with {importance}% importance")
-        
-        # Calculate current total importance (including new item)
-        total_importance = sum(item["importance"] for item in items.values())
-        
-        # If total exceeds 100%, scale all items down
-        if total_importance > 100:
-            scale_factor = 100 / total_importance
-            for item_name, item_data in items.items():
-                if item_name != new_item:  # Keep the new item at the requested importance
-                    old_importance = item_data["importance"]
-                    new_importance = round(old_importance * scale_factor, 1)
-                    item_data["importance"] = new_importance
-                    changes.append(f"Scaled '{item_name}' importance from {old_importance}% to {new_importance}%")
-        
-        # Recalculate ratings
-        max_importance = max(item["importance"] for item in items.values())
-        if max_importance > 0:
-            for item_name, item_data in items.items():
-                new_rating = round((item_data["importance"] * 10) / max_importance, 1)
-                if item_name == new_item:
-                    item_data["rating"] = new_rating
-                    changes.append(f"Set '{new_item}' rating to {new_rating}/10")
-                else:
-                    old_rating = item_data["rating"]
-                    item_data["rating"] = new_rating
-                    if abs(old_rating - new_rating) > 0.1:
-                        changes.append(f"Updated '{item_name}' rating from {old_rating}/10 to {new_rating}/10")
-        
-        return changes
-        
-    except Exception as e:
-        logger.error(f"Error in add_item_to_dashboard: {str(e)}")
-        return [f"Error adding item to dashboard: {str(e)}"]
-
-def set_skill_importance(dashboards: Dict[str, Any], skill_name: str, new_importance: float) -> List[str]:
-    """Set the importance of a skill across all dashboards"""
-    changes = []
     
-    try:
-        # Get the first role (assuming there's only one)
-        if len(dashboards) == 0:
-            return ["Error: No dashboard data"]
-        
-        role_key = next(iter(dashboards))
-        role_data = dashboards[role_key]
-        
-        # Find the skill in all categories
-        found = False
-        for category, items in role_data.items():
-            if skill_name in items:
-                old_importance = items[skill_name]["importance"]
-                items[skill_name]["importance"] = new_importance
-                changes.append(f"Changed '{skill_name}' importance in {category} from {old_importance}% to {new_importance}%")
-                found = True
-                
-                # Recalculate ratings for this category
-                max_importance = max(item["importance"] for item in items.values())
-                if max_importance > 0:
-                    for item_name, item_data in items.items():
-                        old_rating = item_data["rating"]
-                        new_rating = round((item_data["importance"] * 10) / max_importance, 1)
-                        item_data["rating"] = new_rating
-                        if abs(old_rating - new_rating) > 0.1:
-                            changes.append(f"Updated '{item_name}' rating in {category} from {old_rating}/10 to {new_rating}/10")
-            else:
-                # Try fuzzy matching (e.g. "JavaScript" vs "JavaScript Experience")
-                for item_name in list(items.keys()):
-                    if skill_name.lower() in item_name.lower() or item_name.lower() in skill_name.lower():
-                        old_importance = items[item_name]["importance"]
-                        items[item_name]["importance"] = new_importance
-                        changes.append(f"Changed '{item_name}' importance in {category} from {old_importance}% to {new_importance}%")
-                        found = True
-                        
-                        # Recalculate ratings for this category
-                        max_importance = max(item["importance"] for item in items.values())
-                        if max_importance > 0:
-                            for item_key, item_data in items.items():
-                                old_rating = item_data["rating"]
-                                new_rating = round((item_data["importance"] * 10) / max_importance, 1)
-                                item_data["rating"] = new_rating
-                                if abs(old_rating - new_rating) > 0.1:
-                                    changes.append(f"Updated '{item_key}' rating in {category} from {old_rating}/10 to {new_rating}/10")
-                        break
-        
-        if not found:
-            changes.append(f"Warning: Skill '{skill_name}' not found in any dashboard")
-        
-        return changes
-        
-    except Exception as e:
-        logger.error(f"Error in set_skill_importance: {str(e)}")
-        return [f"Error setting skill importance: {str(e)}"]
-
-def set_skill_rating(dashboards: Dict[str, Any], skill_name: str, new_rating: float) -> List[str]:
-    """Set the rating of a skill across all dashboards"""
-    changes = []
-    
-    try:
-        # Get the first role (assuming there's only one)
-        if len(dashboards) == 0:
-            return ["Error: No dashboard data"]
-        
-        role_key = next(iter(dashboards))
-        role_data = dashboards[role_key]
-        
-        # Find the skill in all categories
-        found = False
-        for category, items in role_data.items():
-            if skill_name in items:
-                old_rating = items[skill_name]["rating"]
-                items[skill_name]["rating"] = new_rating
-                changes.append(f"Changed '{skill_name}' rating in {category} from {old_rating}/10 to {new_rating}/10")
-                found = True
-            else:
-                # Try fuzzy matching
-                for item_name in list(items.keys()):
-                    if skill_name.lower() in item_name.lower() or item_name.lower() in skill_name.lower():
-                        old_rating = items[item_name]["rating"]
-                        items[item_name]["rating"] = new_rating
-                        changes.append(f"Changed '{item_name}' rating in {category} from {old_rating}/10 to {new_rating}/10")
-                        found = True
-                        break
-        
-        if not found:
-            changes.append(f"Warning: Skill '{skill_name}' not found in any dashboard")
-        
-        return changes
-        
-    except Exception as e:
-        logger.error(f"Error in set_skill_rating: {str(e)}")
-        return [f"Error setting skill rating: {str(e)}"]
+    return structure
 
 # Run the application
 if __name__ == "__main__":

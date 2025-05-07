@@ -6,6 +6,11 @@
       "static/css/app/layout.css",
       "static/chunks/app/layout.js"
     ],
+    "/page": [
+      "static/chunks/webpack.js",
+      "static/chunks/main-app.js",
+      "static/chunks/app/page.js"
+    ],
     "/hiring/page": [
       "static/chunks/webpack.js",
       "static/chunks/main-app.js",
@@ -26,10 +31,20 @@
       "static/chunks/main-app.js",
       "static/chunks/app/api/jd/sample-prompts/route.js"
     ],
-    "/_not-found/page": [
+    "/api/process-prompt/route": [
       "static/chunks/webpack.js",
       "static/chunks/main-app.js",
-      "static/chunks/app/_not-found/page.js"
+      "static/chunks/app/api/process-prompt/route.js"
+    ],
+    "/api/update-dashboard-data/route": [
+      "static/chunks/webpack.js",
+      "static/chunks/main-app.js",
+      "static/chunks/app/api/update-dashboard-data/route.js"
+    ],
+    "/api/recommended-prompts/[threshold_id]/route": [
+      "static/chunks/webpack.js",
+      "static/chunks/main-app.js",
+      "static/chunks/app/api/recommended-prompts/[threshold_id]/route.js"
     ]
   }
 }

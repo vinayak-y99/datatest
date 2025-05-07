@@ -20,6 +20,7 @@ from app.services.resume.resume_evaluation import resume_evaluation_router
 from app.technicalpanel.techpanel_routes import techpanel_router
 from app.recruiter import recruiter_router
 from app.client.clientpanel import clientpanel_router
+from app.routes.jd import CreateJD_router
 
 app = FastAPI(title="FastHire99 API", version="1.0.0") 
 
@@ -41,3 +42,4 @@ app.include_router(admin_router, tags=["admin"])
 app.include_router(techpanel_router, tags=["Candidate"])
 app.include_router(recruiter_router, tags=["Recruiter Panel"])
 app.include_router(clientpanel_router, tags=["Client Panel"])
+app.include_router(CreateJD_router, tags=["Job Description"])

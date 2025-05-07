@@ -352,14 +352,11 @@ const Sidebar = ({
             const threshold_id = tid || parseInt(jobId);
             console.log(`Using threshold ID ${threshold_id} for prompt processing`);
             
-            // First, call the process-prompt API which uses AI to properly handle the modifications
-            let processedSkillsData = null;
-            let processingSuccessful = false;
-            
+            // Call the process-prompt API to modify the dashboard
             try {
                 console.log("Calling process-prompt API...");
                 const processResponse = await fetch('/api/process-prompt', {
-                    method: 'POST',
+                    method: 'PUT',
                     headers: {
                         'Content-Type': 'application/json',
                         'Accept': 'application/json'
@@ -367,116 +364,80 @@ const Sidebar = ({
                     body: JSON.stringify({
                         prompt: promptText,
                         threshold_id: threshold_id,
-                        current_dashboards: skills_data // Send current data to ensure proper context
+                        job_id: jobId
                     }),
                 });
             
-                if (processResponse.ok) {
-                    try {
-                        const processData = await processResponse.json();
-                        console.log("Process prompt response:", processData);
-                        
-                        if (processData && processData.modified_dashboards) {
-                            processedSkillsData = processData.modified_dashboards;
-                            processingSuccessful = true;
-                            
-                            // If processing was successful, show the changes that were made
-                            if (processData.changes && processData.changes.length > 0) {
-                                console.log("Changes made:", processData.changes);
-                                // Optionally display changes to user
-                                // setChangesMessage(processData.changes.join("\n"));
-                            }
-                        }
-                    } catch (parseError) {
-                        console.warn("Could not parse process response as JSON:", parseError);
-                    }
-                } else {
-                    const errorData = await processResponse.text();
-                    console.warn("Process prompt warning:", errorData.substring(0, 200));
-                }
-            } catch (processError) {
-                console.warn("Error with process-prompt API:", processError);
-            }
-            
-            // Fallback: Use the local processing if the AI-based one failed
-            let finalSkillsData;
-            if (processingSuccessful && processedSkillsData) {
-                console.log("Using AI-processed skills data");
-                finalSkillsData = processedSkillsData;
-            } else {
-                console.log("Falling back to local processing");
-                // Manually apply changes as a backup approach
-                finalSkillsData = manuallyApplyChanges(skills_data, promptText);
-            }
-            
-            // Ensure we're sending an object, not an array
-            let sanitizedSkillsData = finalSkillsData;
-            if (Array.isArray(finalSkillsData)) {
-                if (finalSkillsData.length > 0) {
-                    sanitizedSkillsData = finalSkillsData[0];
-                } else {
-                    sanitizedSkillsData = {}; // Fallback to empty object if array is empty
-                }
-            }
-            
-            console.log("Final skills data type for update:", typeof sanitizedSkillsData);
-            
-            // Now update the database with the final skills data
-            try {
-                const updateResponse = await fetch('/api/update-dashboard-data', {
-                    method: 'PUT',
-                    headers: {
-                        'Content-Type': 'application/json',
-                        'Accept': 'application/json'
-                    },
-                    body: JSON.stringify({
-                        threshold_id: threshold_id,
-                        job_id: jobId,
-                        skills_data: sanitizedSkillsData,
-                        prompt: promptText
-                    }),
-                });
+                // Get the response content type
+                const contentType = processResponse.headers.get('content-type');
+                let errorMessage = '';
                 
-                if (!updateResponse.ok) {
-                    const contentType = updateResponse.headers.get('content-type');
-                    let errorMessage = '';
-                    
+                if (!processResponse.ok) {
+                    // Try to parse error response as JSON first
                     if (contentType && contentType.includes('application/json')) {
                         try {
-                            const errorData = await updateResponse.json();
-                            errorMessage = errorData.error || errorData.detail || `Server error: ${updateResponse.status}`;
+                            const errorData = await processResponse.json();
+                            errorMessage = errorData.detail || errorData.message || `Server error: ${processResponse.status}`;
                         } catch (jsonError) {
-                            const errorText = await updateResponse.text();
-                            errorMessage = `Failed to update dashboard data: ${updateResponse.status} - ${errorText.substring(0, 100)}`;
+                            console.warn("Failed to parse error response as JSON:", jsonError);
+                            const errorText = await processResponse.text();
+                            errorMessage = `Server error: ${processResponse.status} - ${errorText}`;
                         }
                     } else {
-                        const errorText = await updateResponse.text();
-                        errorMessage = `Failed to update dashboard data: ${updateResponse.status} - ${errorText.substring(0, 100)}`;
+                        // If not JSON, get text response
+                        const errorText = await processResponse.text();
+                        errorMessage = `Server error: ${processResponse.status} - ${errorText}`;
                     }
+                    
+                    console.error("API Error Response:", {
+                        status: processResponse.status,
+                        statusText: processResponse.statusText,
+                        error: errorMessage
+                    });
                     
                     throw new Error(errorMessage);
                 }
-                
-                console.log("Dashboard data update successful");
-                
-                // Update the UI with the changes
-                if (onDashboardUpdate) {
-                    onDashboardUpdate(sanitizedSkillsData);
+
+                // Parse successful response
+                let processData;
+                try {
+                    processData = await processResponse.json();
+                    console.log("Process prompt response:", processData);
+                } catch (parseError) {
+                    console.error("Failed to parse response as JSON:", parseError);
+                    throw new Error("Invalid response format from server");
                 }
-            
-                alert("Threshold scores updated successfully!");
                 
-                // Refresh sample prompts after successful update
-                fetchSamplePrompts();
-            } catch (apiError) {
-                console.error("API error:", apiError);
-                throw apiError;
+                if (processData && processData.modified_dashboards) {
+                    // Update the UI with the changes
+                    if (onDashboardUpdate) {
+                        onDashboardUpdate(processData.modified_dashboards.skills_data);
+                    }
+                    
+                    // Show success message with changes
+                    if (processData.changes && processData.changes.length > 0) {
+                        setMessage(`Successfully applied changes:\n${processData.changes.join('\n')}`);
+                    } else {
+                        setMessage("Successfully updated dashboard");
+                    }
+                    
+                    // Refresh sample prompts after successful update
+                    fetchSamplePrompts();
+                } else {
+                    console.error("Invalid response format:", processData);
+                    throw new Error("No modified dashboard data received");
+                }
+            } catch (processError) {
+                console.error("Error processing prompt:", processError);
+                // Set a more user-friendly error message
+                setError(processError.message || "Failed to process prompt. Please try again.");
+                throw processError;
             }
         
             setIsLoading(false);
         } catch (error) {
-            console.error("Error processing prompt:", error);
-            setError(`Error updating dashboard: ${error.message}`);
+            console.error("Error in handleRunPrompt:", error);
+            setError(error.message || "An unexpected error occurred");
             setIsLoading(false);
         }
     };
