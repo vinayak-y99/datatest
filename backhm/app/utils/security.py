@@ -1,8 +1,12 @@
 from passlib.context import CryptContext
 from functools import wraps
-from fastapi import HTTPException
+from fastapi import HTTPException, Request, Depends
 from sqlalchemy.exc import SQLAlchemyError
 import logging
+from fastapi.security import OAuth2PasswordBearer
+import jwt
+from typing import Optional
+from app.core.Config import settings
 
 # Set up password hashing
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
@@ -37,3 +41,33 @@ def handle_db_error(func):
                 detail=f"An unexpected error occurred: {str(e)}"
             )
     return wrapper
+
+# Setup OAuth2 for token authentication
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token")
+
+async def get_user_id_from_request(request: Request) -> str:
+    """
+    Extract user ID from the request's authorization header.
+    
+    Returns:
+        str: User ID if found, or "anonymous" if not found or invalid.
+    """
+    try:
+        # Try to get token from header
+        auth_header = request.headers.get("Authorization")
+        if not auth_header or not auth_header.startswith("Bearer "):
+            return "anonymous"
+        
+        token = auth_header.replace("Bearer ", "")
+        
+        # Decode JWT token
+        payload = jwt.decode(token, settings.JWT_SECRET, algorithms=[settings.JWT_ALGORITHM])
+        
+        # Return user ID from payload
+        if "sub" in payload:
+            return str(payload["sub"])
+        return "anonymous"
+        
+    except Exception as e:
+        logger.warning(f"Failed to extract user ID from request: {e}")
+        return "anonymous"

@@ -23,6 +23,11 @@ class Settings(BaseSettings):
     MODEL_NAME: str = "gemini-2.0-flash" 
     MODEL_TEMPERATURE: float = 0.2
 
+    # Security settings
+    JWT_SECRET: str = "your-secret-key-here"  # Change this in production!
+    JWT_ALGORITHM: str = "HS256"
+    ACCESS_TOKEN_EXPIRE_MINUTES: int = 30
+    
     # JD Analysis Constants
     PERCENTAGE_TOLERANCE: float = 1.0
     MAX_RATING: float = 10.0
@@ -69,6 +74,8 @@ LOGGING_CONFIG = settings.LOGGING_CONFIG
 JD_ANALYSIS_CONFIG = settings.JD_ANALYSIS_CONFIG
 PERCENTAGE_TOLERANCE = settings.PERCENTAGE_TOLERANCE
 MAX_RATING = settings.MAX_RATING
+JWT_SECRET = settings.JWT_SECRET
+JWT_ALGORITHM = settings.JWT_ALGORITHM
 
 # Create uploads directory
 UPLOAD_DIR.mkdir(exist_ok=True)

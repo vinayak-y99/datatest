@@ -16,35 +16,10 @@
       "static/chunks/main-app.js",
       "static/chunks/app/hiring/page.js"
     ],
-    "/api/threshold-ids/route": [
+    "/_not-found/page": [
       "static/chunks/webpack.js",
       "static/chunks/main-app.js",
-      "static/chunks/app/api/threshold-ids/route.js"
-    ],
-    "/api/recommended-prompts/route": [
-      "static/chunks/webpack.js",
-      "static/chunks/main-app.js",
-      "static/chunks/app/api/recommended-prompts/route.js"
-    ],
-    "/api/jd/sample-prompts/route": [
-      "static/chunks/webpack.js",
-      "static/chunks/main-app.js",
-      "static/chunks/app/api/jd/sample-prompts/route.js"
-    ],
-    "/api/process-prompt/route": [
-      "static/chunks/webpack.js",
-      "static/chunks/main-app.js",
-      "static/chunks/app/api/process-prompt/route.js"
-    ],
-    "/api/update-dashboard-data/route": [
-      "static/chunks/webpack.js",
-      "static/chunks/main-app.js",
-      "static/chunks/app/api/update-dashboard-data/route.js"
-    ],
-    "/api/recommended-prompts/[threshold_id]/route": [
-      "static/chunks/webpack.js",
-      "static/chunks/main-app.js",
-      "static/chunks/app/api/recommended-prompts/[threshold_id]/route.js"
+      "static/chunks/app/_not-found/page.js"
     ]
   }
 }

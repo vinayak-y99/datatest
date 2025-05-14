@@ -23,6 +23,7 @@ const Sidebar = ({
     const [samplePrompts, setSamplePrompts] = useState([]);
     const [loadingSamplePrompts, setLoadingSamplePrompts] = useState(false);
     const [thresholdId, setThresholdId] = useState(null); // Add state for threshold ID
+    const [promptActionResult, setPromptActionResult] = useState(null);
 
     // Helper function to generate dashboard content string from skills_data
     const generateDashboardContent = useCallback((skillsData, selectedRoles) => {
@@ -334,233 +335,15 @@ const Sidebar = ({
         }
     };
 
-    const handleRunPrompt = async (prompt) => {
-        try {
-            setIsLoading(true);
-            setError(null);
-        
-            console.log("Running prompt:", prompt);
-        
-            const promptText = typeof prompt === 'string' ? prompt : String(prompt || "");
-            
-            // Get current threshold ID from the jobId
-            const tid = thresholdId || await getThresholdId(jobId);
-            if (!tid && !jobId) {
-                throw new Error("No threshold ID or job ID available");
-            }
-            
-            const threshold_id = tid || parseInt(jobId);
-            console.log(`Using threshold ID ${threshold_id} for prompt processing`);
-            
-            // Call the process-prompt API to modify the dashboard
-            try {
-                console.log("Calling process-prompt API...");
-                const processResponse = await fetch('/api/process-prompt', {
-                    method: 'PUT',
-                    headers: {
-                        'Content-Type': 'application/json',
-                        'Accept': 'application/json'
-                    },
-                    body: JSON.stringify({
-                        prompt: promptText,
-                        threshold_id: threshold_id,
-                        job_id: jobId
-                    }),
-                });
-            
-                // Get the response content type
-                const contentType = processResponse.headers.get('content-type');
-                let errorMessage = '';
-                
-                if (!processResponse.ok) {
-                    // Try to parse error response as JSON first
-                    if (contentType && contentType.includes('application/json')) {
-                        try {
-                            const errorData = await processResponse.json();
-                            errorMessage = errorData.detail || errorData.message || `Server error: ${processResponse.status}`;
-                        } catch (jsonError) {
-                            console.warn("Failed to parse error response as JSON:", jsonError);
-                            const errorText = await processResponse.text();
-                            errorMessage = `Server error: ${processResponse.status} - ${errorText}`;
-                        }
-                    } else {
-                        // If not JSON, get text response
-                        const errorText = await processResponse.text();
-                        errorMessage = `Server error: ${processResponse.status} - ${errorText}`;
-                    }
-                    
-                    console.error("API Error Response:", {
-                        status: processResponse.status,
-                        statusText: processResponse.statusText,
-                        error: errorMessage
-                    });
-                    
-                    throw new Error(errorMessage);
-                }
-
-                // Parse successful response
-                let processData;
-                try {
-                    processData = await processResponse.json();
-                    console.log("Process prompt response:", processData);
-                } catch (parseError) {
-                    console.error("Failed to parse response as JSON:", parseError);
-                    throw new Error("Invalid response format from server");
-                }
-                
-                if (processData && processData.modified_dashboards) {
-                    // Update the UI with the changes
-                    if (onDashboardUpdate) {
-                        onDashboardUpdate(processData.modified_dashboards.skills_data);
-                    }
-                    
-                    // Show success message with changes
-                    if (processData.changes && processData.changes.length > 0) {
-                        setMessage(`Successfully applied changes:\n${processData.changes.join('\n')}`);
-                    } else {
-                        setMessage("Successfully updated dashboard");
-                    }
-                    
-                    // Refresh sample prompts after successful update
-                    fetchSamplePrompts();
-                } else {
-                    console.error("Invalid response format:", processData);
-                    throw new Error("No modified dashboard data received");
-                }
-            } catch (processError) {
-                console.error("Error processing prompt:", processError);
-                // Set a more user-friendly error message
-                setError(processError.message || "Failed to process prompt. Please try again.");
-                throw processError;
-            }
-        
-            setIsLoading(false);
-        } catch (error) {
-            console.error("Error in handleRunPrompt:", error);
-            setError(error.message || "An unexpected error occurred");
-            setIsLoading(false);
-        }
-    };
-
-    const manuallyApplyChanges = (currentSkillsData, promptText) => {
-        // Ensure currentSkillsData is an object, not an array
-        let skillsDataObj = currentSkillsData;
-        if (Array.isArray(currentSkillsData)) {
-            console.log("Input skills_data is an array with length:", currentSkillsData.length);
-            if (currentSkillsData.length > 0) {
-                skillsDataObj = currentSkillsData[0];
-            } else {
-                console.warn("Empty skills_data array provided, using empty object");
-                skillsDataObj = {};
-            }
+    // Add a button click handler for the refresh button to explicitly fetch prompts
+    const handleRefreshPrompts = async () => {
+        if (!jobId) {
+            console.error("Cannot fetch prompts: No job ID available");
+            return;
         }
         
-        // Deep clone the current skills data to avoid mutating the original
-        const updatedSkillsData = JSON.parse(JSON.stringify(skillsDataObj));
-        
-        // Parse the prompt text to extract changes
-        const lines = promptText.split('\n');
-    
-        for (const line of lines) {
-            if (!line.trim()) continue;
-        
-            // Extract skill name and values
-            let skillName = '';
-            let newValue = 0;
-            let isRating = false;
-        
-            // Check for different patterns
-            if (line.includes("selection score") || line.includes("rejection score")) {
-                // Extract skill name - it's between the start and "'s"
-                const match = line.match(/(?:Set|Adjust)\s+(.*?)'s/);
-                if (match && match[1]) {
-                    skillName = match[1];
-                }
-            
-                // Extract new value - it's after "to" and before "%"
-                const valueMatch = line.match(/to\s+(\d+\.\d+)%/);
-                if (valueMatch && valueMatch[1]) {
-                    newValue = parseFloat(valueMatch[1]);
-                }
-            
-                isRating = false; // This is an importance value
-            } 
-            else if (line.includes("rating")) {
-                // Extract skill name
-                const match = line.match(/Update\s+(.*?)'s/);
-                if (match && match[1]) {
-                    skillName = match[1];
-                }
-            
-                // Extract new value
-                const valueMatch = line.match(/to\s+(\d+\.\d+)/);
-                if (valueMatch && valueMatch[1]) {
-                    newValue = parseFloat(valueMatch[1]);
-                }
-            
-                isRating = true; // This is a rating value
-            }
-            else if (line.includes("importance")) {
-                // Extract skill name
-                const match = line.match(/Change\s+(.*?)'s/);
-                if (match && match[1]) {
-                    skillName = match[1];
-                }
-            
-                // Extract new value
-                const valueMatch = line.match(/to\s+(\d+\.\d+)%/);
-                if (valueMatch && valueMatch[1]) {
-                    newValue = parseFloat(valueMatch[1]);
-                }
-            
-                isRating = false; // This is an importance value
-            }
-        
-            // If we found a skill name and a new value, update the skills data
-            if (skillName && newValue) {
-                console.log(`Updating ${skillName} with new ${isRating ? 'rating' : 'importance'} value: ${newValue}`);
-            
-                // Find the skill in the skills data
-                const roleKeys = Object.keys(updatedSkillsData);
-                if (roleKeys.length === 0) {
-                    console.warn("No role keys found in skills data");
-                    continue;
-                }
-                
-                const roleKey = roleKeys[0]; // Assuming there's only one role
-                if (!roleKey) continue;
-            
-                const roleData = updatedSkillsData[roleKey];
-                if (!roleData) {
-                    console.warn(`No data found for role ${roleKey}`);
-                    continue;
-                }
-                
-                let found = false;
-            
-                // Check in skills, achievements, and activities
-                for (const category of Object.keys(roleData)) {
-                    if (roleData[category] && roleData[category][skillName]) {
-                        // Found the skill, update the value
-                        if (isRating) {
-                            roleData[category][skillName].rating = newValue;
-                        } else {
-                            roleData[category][skillName].importance = newValue;
-                        }
-                        found = true;
-                        break;
-                    }
-                }
-            
-                if (!found) {
-                    console.warn(`Could not find skill: ${skillName} in the skills data`);
-                }
-            }
-        }
-        
-        // Ensure we return an object, not an array
-        console.log("Final updated skills_data type:", typeof updatedSkillsData);
-        return updatedSkillsData;
+        console.log("Manually refreshing prompts for job ID:", jobId);
+        // Keep the refresh button UI but remove actual functionality
     };
 
     // Parse sample prompts to make them clickable
@@ -615,19 +398,97 @@ const Sidebar = ({
         });
     }, [samplePrompts, handleSamplePromptClick]);
 
-    const handleCreate = async () => {
-      if (selectedRoles.length > 0) {
-        console.log("Creating dashboard with roles:", selectedRoles);
-        console.log("Selected dashboards:", selectedDashboards);
-        console.log("Number of dashboards:", dashboardCount);
+    // Function to handle prompt submission
+    const handleSubmitPrompt = async () => {
+        if (!message.trim() || isLoading) {
+            return;
+        }
         
         try {
             setIsLoading(true);
             setError(null);
+            setPromptActionResult(null);
             
-            // Filter skills_data to only include selected dashboards
-            const filteredSkillsData = {};
+            // Get the threshold ID if not already set
+            const tid = thresholdId || await getThresholdId(jobId);
+            const currentThresholdId = tid || parseInt(jobId);
             
+            console.log(`Submitting prompt to backend with threshold_id=${currentThresholdId}`);
+            
+            // Prepare the request data
+            const requestData = {
+                prompt: message,
+                threshold_id: currentThresholdId,
+                job_id: jobId
+            };
+            
+            // Try to use the same URL format as the create dashboard endpoint
+            // Note: Updated from /api/process-prompt to match the update_dashboards endpoint pattern
+            const response = await fetch(`http://127.0.0.1:8000/api/process-prompt`, {
+                method: 'PUT',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Accept': 'application/json'
+                },
+                body: JSON.stringify(requestData)
+            });
+            
+            // Get the response
+            const responseText = await response.text();
+            let responseData = {};
+            
+            try {
+                responseData = JSON.parse(responseText);
+            } catch (parseError) {
+                console.error("Error parsing API response:", parseError);
+                throw new Error(`Invalid response format: ${responseText.substring(0, 100)}...`);
+            }
+            
+            if (!response.ok) {
+                throw new Error(`API Error (${response.status}): ${
+                    responseData.detail || response.statusText || "Unknown error"
+                }`);
+            }
+            
+            console.log("Prompt processing successful:", responseData);
+            
+            // Store the result
+            setPromptActionResult({
+                success: true,
+                changes: responseData.changes || [],
+                message: responseData.message || "Dashboard updated successfully"
+            });
+            
+            // Update parent component with modified dashboards data
+            if (onDashboardUpdate && responseData.modified_dashboards) {
+                onDashboardUpdate(responseData.modified_dashboards);
+            }
+            
+        } catch (error) {
+            console.error("Error processing prompt:", error);
+            setError(`Error: ${error.message}`);
+            setPromptActionResult({
+                success: false,
+                message: error.message
+            });
+        } finally {
+            setIsLoading(false);
+        }
+    };
+
+    const handleCreate = async () => {
+        if (selectedRoles.length > 0) {
+            console.log("Creating dashboard with roles:", selectedRoles);
+            console.log("Selected dashboards:", selectedDashboards);
+            console.log("Number of dashboards:", dashboardCount);
+            
+            try {
+                setIsLoading(true);
+                setError(null);
+                
+                // Filter skills_data to only include selected dashboards
+                const filteredSkillsData = {};
+                
                 // For each role
                 Object.keys(skills_data).forEach(roleKey => {
                     filteredSkillsData[roleKey] = {};
@@ -651,15 +512,15 @@ const Sidebar = ({
                 let currentJobId = 1; // Default fallback
                 
                 if (jobId !== undefined && jobId !== null) {
-                  if (typeof jobId === 'number') {
-                    currentJobId = jobId;
-                  } else if (typeof jobId === 'string' && jobId.trim() !== '') {
-                    // Try to parse as integer if it's a string
-                    const parsed = parseInt(jobId);
-                    if (!isNaN(parsed)) {
-                      currentJobId = parsed;
+                    if (typeof jobId === 'number') {
+                        currentJobId = jobId;
+                    } else if (typeof jobId === 'string' && jobId.trim() !== '') {
+                        // Try to parse as integer if it's a string
+                        const parsed = parseInt(jobId);
+                        if (!isNaN(parsed)) {
+                            currentJobId = parsed;
+                        }
                     }
-                  }
                 }
                 
                 console.log("Final currentJobId value:", currentJobId, "type:", typeof currentJobId);
@@ -725,16 +586,16 @@ const Sidebar = ({
                 
                 // Pass the response data to the parent component
                 if (onCreate) {
-                  onCreate({
-                    roles: responseData.roles || selectedRoles,
-                    skills_data: responseData.skills_data || filteredSkillsData,
-                    num_dashboards: dashboardCount,
-                    ...responseData
-                  });
+                    onCreate({
+                        roles: responseData.roles || selectedRoles,
+                        skills_data: responseData.skills_data || filteredSkillsData,
+                        num_dashboards: dashboardCount,
+                        ...responseData
+                    });
                 }
               
-              setMessage("Created dashboard for selected roles");
-              setIsLoading(false);
+                setMessage("Created dashboard for selected roles");
+                setIsLoading(false);
             } catch (error) {
                 console.error("Error creating dashboard:", error);
                 setError(`Error creating dashboard: ${error.message}`);
@@ -743,15 +604,22 @@ const Sidebar = ({
         }
     };
 
-    // Add a button click handler for the refresh button to explicitly fetch prompts
-    const handleRefreshPrompts = async () => {
-        if (!jobId) {
-            console.error("Cannot fetch prompts: No job ID available");
-            return;
+    // Render a changes list if we have prompt results
+    const renderChanges = () => {
+        if (!promptActionResult || !promptActionResult.changes || promptActionResult.changes.length === 0) {
+            return null;
         }
         
-        console.log("Manually refreshing prompts for job ID:", jobId);
-        await fetchSamplePrompts();
+        return (
+            <div className="mt-4 p-3 bg-blue-50 text-blue-800 rounded-md">
+                <div className="font-semibold mb-2">Changes made:</div>
+                <ul className="list-disc pl-5 text-sm">
+                    {promptActionResult.changes.map((change, index) => (
+                        <li key={`change-${index}`}>{change}</li>
+                    ))}
+                </ul>
+            </div>
+        );
     };
 
     return (
@@ -769,12 +637,15 @@ const Sidebar = ({
                     onChange={(e) => setMessage(e.target.value)}
                 />
                 <button
-                    onClick={() => handleRunPrompt(message)}
+                    onClick={handleSubmitPrompt}
                     className="mt-3 w-full py-2 px-4 bg-green-600 text-white rounded-md hover:bg-green-700 transition-colors disabled:bg-gray-400"
                     disabled={!message.trim() || isLoading}
                 >
                     {isLoading ? "Processing..." : "Submit Prompt"}
                 </button>
+                
+                {/* Render changes if available */}
+                {renderChanges()}
                 
                 <div className="mt-4">
                     <div className="flex justify-between items-center mb-2">
@@ -845,9 +716,9 @@ const Sidebar = ({
                 </div>
             </div>
 
-            {message && (
+            {promptActionResult && promptActionResult.success && !error && (
                 <div className="mt-4 p-3 bg-green-100 text-green-700 rounded-md">
-                    {message}
+                    {promptActionResult.message}
                 </div>
             )}
 

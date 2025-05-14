@@ -1,4 +1,4 @@
-from fastapi import APIRouter, FastAPI, HTTPException, Query
+from fastapi import APIRouter, FastAPI, HTTPException, Query, Request
 import os
 from typing import Optional, Dict, List, Any
 from fastapi import FastAPI, HTTPException, File, UploadFile
@@ -19,6 +19,8 @@ from datetime import datetime
 from sqlalchemy import update
 from app.models.base import ThresholdScore, JobDescription
 from app.database import get_db
+from app.utils.activity_logger import activity_logger
+from app.utils.security import get_user_id_from_request
 
 
 # Configure logging
@@ -43,6 +45,8 @@ class JobDescriptionRequest(BaseModel):
 class JobDescriptionResponse(BaseModel):
     job_description: str = Field(..., description="Generated job description")
 
+# Use the decorator to log function calls
+@activity_logger.log_function_call(action="generate", resource="job_description")
 async def generate_job_description(
     position_title: str,
     required_experience: str,
@@ -107,7 +111,7 @@ async def generate_job_description(
 
 # Create API endpoint
 @CreateJD_router.post("/generate-job-description", response_model=JobDescriptionResponse, tags=["Job Description"])
-async def api_generate_job_description(request: JobDescriptionRequest):
+async def api_generate_job_description(request: JobDescriptionRequest, req: Request):
     """
     Generate a professional job description based on the provided details.
     
@@ -115,6 +119,26 @@ async def api_generate_job_description(request: JobDescriptionRequest):
     - Optional fields include location, position type, office timings, and role details
     - Returns a formatted job description with standard sections
     """
+    # Get user ID from request
+    user_id = await get_user_id_from_request(req)
+    
+    # Log the request
+    activity_logger.log_activity(
+        user_id=user_id,
+        action="request_job_description",
+        resource="job_description",
+        details={
+            "position_title": request.position_title,
+            "required_experience": request.required_experience,
+            "location": request.location,
+            "position_type": request.position_type,
+            "has_office_timings": bool(request.office_timings),
+            "has_role_details": bool(request.role_details)
+        },
+        ip_address=req.client.host if req.client else None
+    )
+    
+    # Generate job description
     job_description = await generate_job_description(
         position_title=request.position_title,
         required_experience=request.required_experience,
@@ -122,6 +146,18 @@ async def api_generate_job_description(request: JobDescriptionRequest):
         position_type=request.position_type,
         office_timings=request.office_timings,
         role_details=request.role_details
+    )
+    
+    # Log the response (successful generation)
+    activity_logger.log_activity(
+        user_id=user_id,
+        action="job_description_generated",
+        resource="job_description",
+        details={
+            "position_title": request.position_title,
+            "description_length": len(job_description)
+        },
+        ip_address=req.client.host if req.client else None
     )
     
     return JobDescriptionResponse(job_description=job_description)
@@ -214,37 +250,40 @@ def get_threshold_ids(job_id: Optional[int] = None):
         List of threshold IDs
     """
     try:
-        # Simulate fetching from a database for now
-        # In a real implementation, you would query the threshold_scores table
+        db = next(get_db())
         
-        # This is a placeholder implementation
-        threshold_mappings = [
-            {"threshold_id": 123, "job_id": 1},
-            {"threshold_id": 140, "job_id": 2},
-            {"threshold_id": 156, "job_id": 3},
-            {"threshold_id": 78, "job_id": 4},
-            {"threshold_id": 199, "job_id": 5},
-            {"threshold_id": 200, "job_id": 6}
-        ]
+        # Query the threshold_scores table
+        query = db.query(ThresholdScore)
         
         if job_id:
             # Filter by job_id if provided
-            results = [
-                ThresholdIdResponse(threshold_id=item["threshold_id"], job_id=item["job_id"]) 
-                for item in threshold_mappings if item["job_id"] == job_id
-            ]
+            query = query.filter(ThresholdScore.job_id == job_id)
             
-            # If no match found, try using job_id as threshold_id
+            # Get the results
+            results = query.all()
+            
             if not results:
-                results = [ThresholdIdResponse(threshold_id=job_id, job_id=job_id)]
+                # If no match found, create a new threshold score
+                new_threshold = ThresholdScore(
+                    job_id=job_id,
+                    selection_score=0.0,
+                    rejection_score=0.0,
+                    threshold_value=0.0,
+                    threshold_result={},
+                    created_at=datetime.now(),
+                    updated_at=datetime.now()
+                )
+                db.add(new_threshold)
+                db.commit()
+                db.refresh(new_threshold)
+                
+                return [ThresholdIdResponse(threshold_id=new_threshold.threshold_id, job_id=job_id)]
+            
+            return [ThresholdIdResponse(threshold_id=t.threshold_id, job_id=t.job_id) for t in results]
         else:
-            # Return all mappings
-            results = [
-                ThresholdIdResponse(threshold_id=item["threshold_id"], job_id=item["job_id"]) 
-                for item in threshold_mappings
-            ]
-        
-        return results
+            # Return all threshold scores
+            results = query.all()
+            return [ThresholdIdResponse(threshold_id=t.threshold_id, job_id=t.job_id) for t in results]
         
     except Exception as e:
         logger.error(f"Error getting threshold IDs: {str(e)}")
