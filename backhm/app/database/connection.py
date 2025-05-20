@@ -13,7 +13,7 @@ import traceback
 # Configure logger
 logger = logging.getLogger(__name__)
 
-DATABASE_URL = f"postgresql://{settings.db_user}:{settings.db_password}@{settings.db_host}:{settings.db_port}/{settings.db_name}"
+DATABASE_URL = "postgresql:/1234@localhost:5432/fasthire999"
 SQLALCHEMY_DATABASE_URL = f"postgresql://{settings.db_user}:{settings.db_password}@{settings.db_host}:{settings.db_port}/{settings.db_name}"
 
 engine = create_engine(SQLALCHEMY_DATABASE_URL)

@@ -46,10 +46,12 @@ class ActivityLoggingMiddleware(BaseHTTPMiddleware):
         request_body = None
         if request.method in ["POST", "PUT", "PATCH"]:
             try:
-                # Store original request body
+                # Create a copy of the request before consuming the body
                 body_bytes = await request.body()
-                # Create a new request with the same body to pass to the endpoint
-                await request._body.set(body_bytes)
+                
+                # Use a more reliable method to make the body available again
+                # This is needed because FastAPI/Starlette consumes the body stream
+                request._body = body_bytes  # Set the body directly without using set()
                 
                 # Try to parse as JSON
                 try:

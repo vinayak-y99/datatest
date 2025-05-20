@@ -16,6 +16,11 @@
       "static/chunks/main-app.js",
       "static/chunks/app/hiring/page.js"
     ],
+    "/api/jd/sample-prompts/route": [
+      "static/chunks/webpack.js",
+      "static/chunks/main-app.js",
+      "static/chunks/app/api/jd/sample-prompts/route.js"
+    ],
     "/_not-found/page": [
       "static/chunks/webpack.js",
       "static/chunks/main-app.js",

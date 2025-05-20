@@ -5,7 +5,7 @@ import logging
 
 class Settings(BaseSettings):
     db_user : str = "postgres"
-    db_password : str = "Temp1234"
+    db_password : str = "1234"
     db_host : str = "localhost"
     db_name : str = "fasthire999"
     db_port : str = "5432"

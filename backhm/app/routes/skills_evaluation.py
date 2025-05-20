@@ -29,7 +29,7 @@ from app.core.Config import settings
 from fastapi.responses import JSONResponse
 
 # Database connection
-SQLALCHEMY_DATABASE_URL = f"postgresql://postgres:Temp1234@localhost:5432/fasthire999" # Change as needed
+SQLALCHEMY_DATABASE_URL = f"postgresql://postgres:1234@localhost:5432/fasthire999" # Change as needed
 
 engine = create_engine(SQLALCHEMY_DATABASE_URL)
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
