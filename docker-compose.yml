@@ -1,27 +1,55 @@
-version: '3.9'
+version: '3.8'
 
 services:
+  # ─────────────────────────────────────────────────────
+  # FastAPI Backend
+  # ─────────────────────────────────────────────────────
   backend:
+    container_name: fastjobs-backend
     build:
-      context: .
-      dockerfile: Dockerfile.backend  # Rename your backend Dockerfile to Dockerfile.backend
-    container_name: fastapi-backend
-    ports:
-      - "8099:8000"
-    volumes:
-      - ./uploads:/app/uploads
-      - ./logs:/app/logs
-    depends_on:
-      - frontend
-    restart: always
-
-  frontend:
-    build:
-      context: ./frontend  # Assuming frontend is in a subfolder named 'frontend'
-      dockerfile: Dockerfile.frontend  # Rename your frontend Dockerfile to Dockerfile.frontend
-    container_name: nextjs-frontend
-    ports:
-      - "3033:3000"
+      context: ./backend
+      dockerfile: Dockerfile
     environment:
-      - NODE_ENV=production
+      - MONGODB_URI=mongodb://mongodb:27017/
+      - BASE_DIR=/app
+      - LOG_LEVEL=INFO
+    volumes:
+      - ./backend/app:/app
+      - ./backend/logs:/app/logs
+    depends_on:
+      - mongodb
     restart: always
+    ports:
+      - "8055:8000"
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+
+  # ─────────────────────────────────────────────────────
+  # Next.js Frontend
+  # ─────────────────────────────────────────────────────
+  frontend:
+    container_name: fastjobs-frontend
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    ports:
+      - "3055:3000"
+    depends_on:
+      - backend
+    restart: always
+    environment:
+      - NEXT_PUBLIC_API_URL=http://localhost:8000
+
+  # ─────────────────────────────────────────────────────
+  # MongoDB (Activity Logger)
+  # ─────────────────────────────────────────────────────
+  mongodb:
+    container_name: mongodb
+    image: mongo:6.0
+    restart: always
+    ports:
+      - "27029:27017"
+    volumes:
+      - mongo_data:/data/db
+
+volumes:
+  mongo_data:
