@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { FaDatabase, FaRobot, FaEye, FaEyeSlash } from 'react-icons/fa';
-import BehaviorPage from '../Behavior/page';
+import BehaviorPage from './page';
 
 const BehaviorTab = ({ resumeList, setResumeList }) => {
   const [showDashboard, setShowDashboard] = useState(false);

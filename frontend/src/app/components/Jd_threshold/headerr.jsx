@@ -2,9 +2,9 @@
 import React, { useState } from 'react';
 
 import ProfileActionV from '../../mainDashboard/profileaa';
-import RecruiterDashboard from '../../components/scoring';
-import SearchBar from "../../components/searchBar";
-import ActionButtons from '../../components/actionbuttons';
+import RecruiterDashboard from '../scoring';
+import SearchBar from "../searchBar";
+import ActionButtons from '../actionbuttons';
 
 export default function Header() {
   // Define state or functions here

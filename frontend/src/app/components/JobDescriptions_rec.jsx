@@ -1,8 +1,8 @@
 import React, { useState, useRef } from 'react';
 import { FaEyeSlash, FaTrash, FaRobot, FaChevronLeft, FaChevronRight, FaSearch, FaFilter, FaCalendarAlt, FaPlus, FaSort, FaEllipsisV, FaBrain, FaCheckCircle, FaExclamationCircle, FaRegCalendarAlt } from 'react-icons/fa';
-import MovableResizablePopup from '../components/Resume/MovableResizablePopup';
-import CS from '../components/Resume/page';
-import DrawerNavigation from '../components/Resume/DrawerNavigation';
+import MovableResizablePopup from './Resume/MovableResizablePopup';
+import CS from './Resume/page';
+import DrawerNavigation from './Resume/DrawerNavigation';
 
 const columnHeaders = {
   jdId: 'JD ID',

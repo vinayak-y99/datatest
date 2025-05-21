@@ -1,17 +1,15 @@
 import React, { useState } from 'react';
-import { FaUpload, FaDatabase, FaRobot, FaEye, FaEyeSlash } from 'react-icons/fa';
-import ThresholdPage from '../Threshold/page'; // You'll need to create this component
+import { FaDatabase, FaRobot, FaEye, FaEyeSlash } from 'react-icons/fa';
+import CodingPage from './page';
 
-const ThresholdTab = ({ resumeList }) => {
+const CodingTab = ({ resumeList, setResumeList }) => {
   const [showDashboard, setShowDashboard] = useState(false);
-  const [files, setFiles] = useState({ upload: null, hrdb: null, atx: null });
-  const [thresholdList, setThresholdList] = useState([]); // Local state for threshold documents
-  const [showThresholdPage, setShowThresholdPage] = useState(null); // Tracks which threshold doc to show
+  const [files, setFiles] = useState({ hrdb: null, ats: null });
+  const [showCodingPage, setShowCodingPage] = useState(null); // Tracks which coding item to show
 
   const buttonConfig = {
-    'Upload Threshold': { icon: <FaUpload className="mr-2 text-blue-500" />, color: 'blue' },
     'HR DB': { icon: <FaDatabase className="mr-2 text-blue-500" />, color: 'blue' },
-    'ATS': { icon: <FaRobot className="mr-2 text-blue-500" />, color: 'blue' }
+    'ATS': { icon: <FaRobot className="mr-2 text-blue-500" />, color: 'blue' },
   };
 
   const handleFileUpload = (buttonType) => (e) => {
@@ -20,26 +18,26 @@ const ThresholdTab = ({ resumeList }) => {
       Array.from(selectedFiles).forEach(file => {
         if (file.type === 'application/pdf') {
           const newFile = {
-            id: Date.now() + Math.random(),
-            documentName: `Threshold Doc ${thresholdList.length + 1}`,
-            type: 'Threshold',
-            category: 'Criteria',
+            id: Date.now() + Math.random(), // Unique ID for each file
+            candidateName: `Candidate ${resumeList.length + 1}`,
+            role: 'Software Engineer',
+            position: 'Full-time',
             fileName: file.name,
             uploadDate: new Date().toLocaleDateString(),
             dashboard: 'Create',
             buttonType: buttonType,
-            file: file
+            file: file // Store the file object for passing to CodingPage
           };
-          setThresholdList(prev => [...prev, newFile]);
+          setResumeList(prev => [...prev, newFile]);
           setFiles(prev => ({
             ...prev,
             [buttonType.toLowerCase().replace(' ', '')]: file,
           }));
           setShowDashboard(true);
+        } else {
+          alert("Please upload PDF files only.");
         }
       });
-    } else {
-      alert("Please upload PDF files only.");
     }
   };
 
@@ -51,35 +49,35 @@ const ThresholdTab = ({ resumeList }) => {
             <tr>
               <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                 <input type="checkbox" className="mr-2" />
-                Document Name
+                Candidate Name
               </th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Type</th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Category</th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">File Name</th>
+              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Role</th>
+              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Position</th>
+              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Document Name</th>
               <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Upload Date</th>
               <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Dashboard</th>
             </tr>
           </thead>
           <tbody className="bg-white divide-y divide-gray-200">
-            {thresholdList.map((item) => (
+            {resumeList.map((item) => (
               <tr key={item.id}>
                 <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 flex items-center">
                   <input type="checkbox" className="mr-2" />
                   <img
-                    src={`../user.svg`} // You might want a different icon
-                    alt={item.documentName}
+                    src={`../user.svg`}
+                    alt={item.candidateName}
                     className="w-10 h-10 rounded-full mr-3"
                   />
-                  {item.documentName}
+                  {item.candidateName}
                   <span className="text-gray-500 ml-2">({item.fileName})</span>
                 </td>
-                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{item.type}</td>
-                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{item.category}</td>
+                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{item.role}</td>
+                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{item.position}</td>
                 <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{item.fileName}</td>
                 <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{item.uploadDate}</td>
                 <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
                   <button
-                    onClick={() => setShowThresholdPage(item.id)}
+                    onClick={() => setShowCodingPage(item.id)} // Set the ID of the clicked item
                     className="text-blue-500 hover:underline"
                   >
                     Create
@@ -93,26 +91,26 @@ const ThresholdTab = ({ resumeList }) => {
     </div>
   );
 
-  const handleCloseThresholdPage = () => {
-    setShowThresholdPage(null);
+  const handleCloseCodingPage = () => {
+    setShowCodingPage(null); // Reset to hide CodingPage
   };
 
   return (
     <div>
       <div className="flex justify-between items-center mb-0">
-        <p style={{ fontSize: '18px', marginLeft: '4px' }}>Threshold</p>
+        <p style={{ fontSize: '18px', marginLeft: '4px' }}>Coding Assessment</p>
         <div className="flex gap-4">
-          {['Upload Threshold', 'HR DB', 'ATS'].map((label) => (
+          {['HR DB', 'ATS'].map((label) => (
             <div key={label}>
               <button
-                onClick={() => document.getElementById(`thresholdFile${label.replace(' ', '')}`).click()}
+                onClick={() => document.getElementById(`codingFile${label.replace(' ', '')}`).click()}
                 className="p-2 text-gray-700 rounded hover:bg-gray-100 flex items-center"
               >
                 {buttonConfig[label].icon}
                 {label}
               </button>
               <input
-                id={`thresholdFile${label.replace(' ', '')}`}
+                id={`codingFile${label.replace(' ', '')}`}
                 type="file"
                 accept=".pdf"
                 onChange={handleFileUpload(label)}
@@ -121,7 +119,7 @@ const ThresholdTab = ({ resumeList }) => {
               />
             </div>
           ))}
-          {thresholdList.length > 0 && (
+          {resumeList.length > 0 && (
             <button
               onClick={() => setShowDashboard(!showDashboard)}
               className="p-2 text-gray-700 rounded hover:bg-gray-100 flex items-center"
@@ -132,16 +130,16 @@ const ThresholdTab = ({ resumeList }) => {
           )}
         </div>
       </div>
-      {showDashboard && thresholdList.length > 0 && renderDashboard()}
+      {showDashboard && resumeList.length > 0 && renderDashboard()}
 
-      {/* Render ThresholdPage only when a threshold doc is selected */}
-      {showThresholdPage !== null && (
+      {/* Render CodingPage only when an item is selected */}
+      {showCodingPage !== null && (
         <div className="mt-4">
-          <ThresholdPage
-            key={showThresholdPage}
-            thresholdId={showThresholdPage}
-            selectedFile={thresholdList.find(item => item.id === showThresholdPage)?.file}
-            onClose={handleCloseThresholdPage}
+          <CodingPage
+            key={showCodingPage} // Ensure re-render on new selection
+            codingId={showCodingPage}
+            selectedFile={resumeList.find(item => item.id === showCodingPage)?.file} // Pass the file object
+            onClose={handleCloseCodingPage} // Pass callback to reset showCodingPage
           />
         </div>
       )}
@@ -149,4 +147,4 @@ const ThresholdTab = ({ resumeList }) => {
   );
 };
 
-export default ThresholdTab;
+export default CodingTab;

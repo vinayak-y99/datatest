@@ -1,0 +1,27 @@
+version: '3.9'
+
+services:
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile.backend  # Rename your backend Dockerfile to Dockerfile.backend
+    container_name: fastapi-backend
+    ports:
+      - "8099:8000"
+    volumes:
+      - ./uploads:/app/uploads
+      - ./logs:/app/logs
+    depends_on:
+      - frontend
+    restart: always
+
+  frontend:
+    build:
+      context: ./frontend  # Assuming frontend is in a subfolder named 'frontend'
+      dockerfile: Dockerfile.frontend  # Rename your frontend Dockerfile to Dockerfile.frontend
+    container_name: nextjs-frontend
+    ports:
+      - "3033:3000"
+    environment:
+      - NODE_ENV=production
+    restart: always
